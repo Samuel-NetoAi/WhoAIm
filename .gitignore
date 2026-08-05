@@ -1,0 +1,46 @@
+# ─── SEGREDOS — nunca versionar ───────────────────────────────────────────
+# Chaves reais da OpenAI e do Gemini. Há um .example ao lado de cada um.
+**/config/api_keys.json
+**/config/youtube_client.json
+**/config/token.json
+.env
+.env.*
+
+# ─── Dependências e artefatos (reinstaláveis) ─────────────────────────────
+node_modules/
+.next/
+out/
+build/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.tsbuildinfo
+.eslintcache
+
+# ─── Binários grandes e baixáveis ─────────────────────────────────────────
+# ffmpeg/ffprobe do Windows (189 MB) — o Remotion já traz os seus, e o
+# PLANO-ALPHA explica como repor este.
+studio/bin/
+# Modelo Vosk pt-BR (52 MB) — baixe de alphacephei.com/vosk/models
+voice/models/
+
+# ─── Mídia: pesada e só necessária na máquina que renderiza ───────────────
+# A regra do projeto: TEXTO sincroniza, MÍDIA não. Ver docs/GIT-E-SINCRONIA.md
+public/videos/
+public/audio/
+public/music/
+renders/
+*.mp4
+*.mov
+*.webm
+*.mp3
+*.wav
+*.m4a
+# ...exceto a cara do Alpha, que é do código.
+!voice/face.png
+
+# ─── Sistema ──────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.log

@@ -1,0 +1,9 @@
+websockets
+sounddevice
+PyQt6
+PyQt6-WebEngine
+pillow
+psutil
+requests
+vosk
+pyttsx3
