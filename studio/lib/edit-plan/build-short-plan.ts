@@ -39,6 +39,17 @@ export const buildShortPlan = (
     .slice(1)
     .map((clip) => clip.startInNarrationSeconds);
 
+  // The short is a prefix of the full edit, so a cue carries over when it
+  // starts inside the kept scenes — trimmed to them if it ran past the cutoff.
+  // Without this the Short would render silent while the full video had music.
+  const lastKeptScene = includedClips.length - 1;
+  const music = (fullPlan.music ?? [])
+    .filter((cue) => Math.min(...cue.scenes) <= lastKeptScene)
+    .map((cue) => ({
+      ...cue,
+      scenes: cue.scenes.filter((scene) => scene <= lastKeptScene),
+    }));
+
   return applyBoundaries(
     includedClips.map((clip) => ({
       id: clip.id,
@@ -53,5 +64,10 @@ export const buildShortPlan = (
     fullPlan.transitionFrames,
     fullPlan.width,
     fullPlan.height,
+    {
+      music,
+      ducking: fullPlan.ducking,
+      narrationPauses: fullPlan.narrationPauses,
+    },
   );
 };

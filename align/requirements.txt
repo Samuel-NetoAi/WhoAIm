@@ -1,0 +1,5 @@
+# O alinhador em si roda só com a biblioteca padrão do Python — é o que
+# permite testar tudo sem áudio e sem instalar nada.
+# O vosk só é necessário para o passo de transcrição, e já está no venv do
+# Alpha (voice/.venv), junto com o modelo pt-BR em voice/models/pt-br.
+vosk

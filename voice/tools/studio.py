@@ -7,18 +7,96 @@ em voz alta para o Samuel. Erros também voltam como frases, nunca exceções.
 from __future__ import annotations
 
 import json
+import platform
 import subprocess
+import threading
 import time
 import webbrowser
 from pathlib import Path
 
 import requests
 
+from .notify import notificar
+
 STUDIO_URL = "http://localhost:3001"
-STUDIO_DIR = r"C:\Ai-Project\Alpha\studio"
+STUDIO_DIR = str(Path(__file__).resolve().parent.parent.parent / "studio")
 
 # Últimos jobs disparados por voz, por tipo, para "como está o render?"
 _last_jobs: dict[str, dict] = {}
+
+# Renders acompanhados agora, para não abrir duas vigias do mesmo job.
+_vigiando: set[str] = set()
+
+INTERVALO_VIGIA = 10  # segundos entre consultas ao Studio
+PASSO_AVISO = 25  # avisa a cada 25% concluídos
+
+
+def _acompanhar_render(pid: str, job_id: str, rotulo: str, tipo: str) -> None:
+    """Acompanha um render e AVISA sozinho — em vez de esperar ser perguntado.
+
+    Um render de 5 minutos de vídeo leva minutos; sem isto, quem disparou fica
+    perguntando "e aí?" ou, pior, presume que terminou e vai procurar um
+    arquivo que ainda não existe.
+    """
+    if job_id in _vigiando:
+        return
+    _vigiando.add(job_id)
+
+    nome_tipo = {"full": "vídeo completo", "short": "Short", "post": "pós-processamento"}.get(
+        tipo, tipo
+    )
+
+    def laco() -> None:
+        proximo_aviso = PASSO_AVISO
+        try:
+            while True:
+                time.sleep(INTERVALO_VIGIA)
+                try:
+                    r = requests.get(
+                        f"{STUDIO_URL}/api/projects/{pid}/render/{job_id}", timeout=10
+                    )
+                    if not r.ok:
+                        notificar(
+                            f"Perdi o acompanhamento do {nome_tipo} de {rotulo}.",
+                            falar=True,
+                        )
+                        return
+                    job = r.json()["job"]
+                except requests.RequestException:
+                    notificar(
+                        f"O Studio parou de responder durante o {nome_tipo} de {rotulo}.",
+                        falar=True,
+                    )
+                    return
+
+                estado = job.get("status")
+                if estado == "rendering":
+                    porcento = round(job.get("progress", 0) * 100)
+                    if porcento >= proximo_aviso:
+                        notificar(f"{nome_tipo} de {rotulo}: {porcento} por cento.")
+                        # Pula direto para a próxima faixa; um render rápido não
+                        # deve despejar 25/50/75 de uma vez.
+                        while proximo_aviso <= porcento:
+                            proximo_aviso += PASSO_AVISO
+                    continue
+
+                if estado == "done":
+                    arquivo = Path(job.get("outputPath", "")).name
+                    notificar(
+                        f"{nome_tipo} de {rotulo} está pronto: {arquivo}. "
+                        f"Diga 'video {rotulo}' para assistir aqui.",
+                        falar=True,
+                    )
+                else:
+                    notificar(
+                        f"{nome_tipo} de {rotulo} falhou: {str(job.get('error', '?'))[:80]}",
+                        falar=True,
+                    )
+                return
+        finally:
+            _vigiando.discard(job_id)
+
+    threading.Thread(target=laco, daemon=True).start()
 
 
 def _studio_alive() -> bool:
@@ -30,12 +108,13 @@ def _studio_alive() -> bool:
 
 
 def _start_studio() -> bool:
+    is_windows = platform.system() == "Windows"
     subprocess.Popen(
         ["npm", "--prefix", STUDIO_DIR, "run", "dev", "--", "-p", "3001"],
-        shell=True,
+        shell=is_windows,  # no Windows o npm é um .cmd e precisa do shell
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
-        creationflags=subprocess.CREATE_NO_WINDOW,
+        creationflags=subprocess.CREATE_NO_WINDOW if is_windows else 0,
     )
     for _ in range(30):
         time.sleep(2)
@@ -50,10 +129,7 @@ def _ensure_studio() -> str | None:
         return None
     if _start_studio():
         return None
-    return (
-        "Não consegui iniciar o Alpha Studio. "
-        "Verifique a pasta C:\\Ai-Project\\Alpha\\studio."
-    )
+    return f"Não consegui iniciar o Alpha Studio. Verifique a pasta {STUDIO_DIR}."
 
 
 def _get_projects() -> list[dict]:
@@ -134,10 +210,11 @@ def studio_control(args: dict) -> str:
             if not r.ok:
                 return f"Falha ao iniciar o render: {data.get('error', 'erro desconhecido')}"
             _last_jobs[target] = {"jobId": data["jobId"], "pid": pid, "label": label}
+            _acompanhar_render(pid, data["jobId"], label, target)
             tipo = "Short" if target == "short" else "vídeo completo"
             return (
                 f"Render do {tipo} de {label} iniciado. "
-                "Pergunte o status quando quiser."
+                "Vou avisando o progresso e quando ficar pronto."
             )
 
         if action == "status":

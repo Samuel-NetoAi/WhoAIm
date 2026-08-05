@@ -18,8 +18,10 @@ import type {
   AudioMode,
   EditPlan,
   FilterPreset,
+  TransitionPreset,
 } from "@/lib/edit-plan/schema";
 import { FILTER_LABELS } from "@/remotion/filters";
+import { TRANSITION_LABELS } from "@/remotion/transitions";
 import { CutTimeline, type Silence } from "./CutTimeline";
 import { NotesPanel } from "./NotesPanel";
 
@@ -36,6 +38,22 @@ const audioModesFromPlan = (plan: EditPlan): Record<string, AudioMode> =>
 
 const filtersFromPlan = (plan: EditPlan): Record<string, FilterPreset> =>
   Object.fromEntries(plan.clips.map((c) => [c.id, c.filter ?? "none"]));
+
+// Which cue covers each scene, for the label in the scene grid. A scene with
+// no cue is silent by design (SILENCIO), which is a musical decision worth
+// seeing at a glance rather than mistaking for a missing track.
+const cueByScene = (plan: EditPlan): (string | null)[] =>
+  plan.clips.map((_, index) => {
+    const cue = (plan.music ?? []).find((c) => c.scenes.includes(index));
+    return cue ? cue.id.replace(/-\d+$/, "") : null;
+  });
+
+const transitionsFromPlan = (
+  plan: EditPlan,
+): Record<string, TransitionPreset> =>
+  Object.fromEntries(
+    plan.clips.map((c) => [c.id, c.transitionFromPrevious ?? "dissolve"]),
+  );
 
 type RenderJob = {
   id: string;
@@ -58,6 +76,9 @@ export default function ProjectPage() {
   const [cutPoints, setCutPoints] = useState<number[] | null>(null);
   const [audioModes, setAudioModes] = useState<Record<string, AudioMode>>({});
   const [filters, setFilters] = useState<Record<string, FilterPreset>>({});
+  const [transitions, setTransitions] = useState<
+    Record<string, TransitionPreset>
+  >({});
   const [postJob, setPostJob] = useState<RenderJob | null>(null);
   const [postSource, setPostSource] = useState<string | null>(null);
   const [post60, setPost60] = useState(false);
@@ -65,6 +86,7 @@ export default function ProjectPage() {
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [analysisNotes, setAnalysisNotes] = useState<string[]>([]);
   const [shortTargetSeconds, setShortTargetSeconds] = useState(30);
   const [jobs, setJobs] = useState<Record<RenderTarget, RenderJob | null>>({
     full: null,
@@ -82,6 +104,7 @@ export default function ProjectPage() {
       setCutPoints(data.editPlan.cutPoints ?? null);
       setAudioModes(audioModesFromPlan(data.editPlan));
       setFilters(filtersFromPlan(data.editPlan));
+      setTransitions(transitionsFromPlan(data.editPlan));
       setDirty(false);
       setPlanError(null);
     } else {
@@ -119,6 +142,8 @@ export default function ProjectPage() {
         durationInSeconds: clip.naturalDurationInSeconds,
         audioMode: audioModes[clip.id] ?? clip.audioMode,
         filter: filters[clip.id] ?? clip.filter,
+        transitionFromPrevious:
+          transitions[clip.id] ?? clip.transitionFromPrevious,
       })),
       editPlan.narration,
       cutPoints.slice(1, -1),
@@ -126,8 +151,18 @@ export default function ProjectPage() {
       editPlan.transitionFrames,
       editPlan.width,
       editPlan.height,
+      {
+        music: editPlan.music,
+        ducking: editPlan.ducking,
+        narrationPauses: editPlan.narrationPauses,
+      },
     );
-  }, [editPlan, cutPoints, audioModes, filters]);
+  }, [editPlan, cutPoints, audioModes, filters, transitions]);
+
+  const cues = useMemo(
+    () => (previewPlan ? cueByScene(previewPlan) : []),
+    [previewPlan],
+  );
 
   const handleUpload = async (event: FormEvent) => {
     event.preventDefault();
@@ -170,14 +205,22 @@ export default function ProjectPage() {
     setCutPoints(analyzeData.editPlan.cutPoints ?? null);
     setAudioModes(audioModesFromPlan(analyzeData.editPlan));
     setFilters(filtersFromPlan(analyzeData.editPlan));
+    setTransitions(transitionsFromPlan(analyzeData.editPlan));
     setDirty(false);
     setPlanError(null);
     await loadSilences();
+    const origem: Record<string, string> = {
+      aligned: "cortes medidos no roteiro alinhado",
+      smart: "cortes encaixados nas pausas da narração",
+      naive: "divisão igual — sem pausas detectadas",
+    };
     setStatusMessage(
-      analyzeData.alignment === "smart"
-        ? "Plano gerado (cortes encaixados nas pausas da narração)."
-        : "Plano gerado (divisão igual — detecção de silêncio indisponível).",
+      `Plano gerado (${origem[analyzeData.alignment] ?? analyzeData.alignment}).`,
     );
+    // The analysis reports what it could and could not use — a scenes.json that
+    // matched nothing, a cue with no track, an alignment that did not fit the
+    // clip count. Hiding that would make "loaded" and "worked" look the same.
+    setAnalysisNotes(analyzeData.notes ?? []);
   };
 
   const handleResetCuts = async () => {
@@ -209,6 +252,7 @@ export default function ProjectPage() {
       setCutPoints(data.editPlan.cutPoints ?? null);
       setAudioModes(audioModesFromPlan(data.editPlan));
       setFilters(filtersFromPlan(data.editPlan));
+      setTransitions(transitionsFromPlan(data.editPlan));
       setDirty(false);
       setStatusMessage("Cortes salvos.");
     } catch (err) {
@@ -326,6 +370,13 @@ export default function ProjectPage() {
               </button>
               {statusMessage && <span className="status">{statusMessage}</span>}
             </div>
+            {analysisNotes.length > 0 && (
+              <ul className="analysis-notes">
+                {analysisNotes.map((note) => (
+                  <li key={note}>{note}</li>
+                ))}
+              </ul>
+            )}
           </form>
         </div>
       </section>
@@ -384,11 +435,12 @@ export default function ProjectPage() {
 
             <div style={{ marginTop: "1.75rem" }}>
               <h3>
-                Áudio e filtro por cena
+                Áudio, filtro e transição por cena
                 <span className="hint" style={{ fontWeight: 400 }}>
                   {" "}
                   · o som do clipe fica baixo sob a narração por padrão;
-                  &quot;substitui&quot; troca a narração pelo som original
+                  &quot;substitui&quot; troca a narração pelo som original. A
+                  transição é a ENTRADA da cena — a primeira não tem.
                 </span>
               </h3>
               <div style={{ marginBottom: "0.7rem" }}>
@@ -421,7 +473,13 @@ export default function ProjectPage() {
               <div className="scene-grid">
                 {previewPlan.clips.map((clip, i) => (
                   <Fragment key={clip.id}>
-                    <span className="scene-label">Cena {i + 1}</span>
+                    <span className="scene-label">
+                      Cena {i + 1}
+                      <br />
+                      <span className="scene-cue">
+                        {cues[i] ? `♪ ${cues[i]}` : "sem música"}
+                      </span>
+                    </span>
                     <select
                       value={audioModes[clip.id] ?? clip.audioMode ?? "mix"}
                       onChange={(e) => {
@@ -458,6 +516,32 @@ export default function ProjectPage() {
                         ),
                       )}
                     </select>
+                    {i === 0 ? (
+                      <span className="hint">— (abre o vídeo)</span>
+                    ) : (
+                      <select
+                        value={
+                          transitions[clip.id] ??
+                          clip.transitionFromPrevious ??
+                          "dissolve"
+                        }
+                        onChange={(e) => {
+                          setTransitions((prev) => ({
+                            ...prev,
+                            [clip.id]: e.target.value as TransitionPreset,
+                          }));
+                          setDirty(true);
+                        }}
+                      >
+                        {(
+                          Object.keys(TRANSITION_LABELS) as TransitionPreset[]
+                        ).map((preset) => (
+                          <option key={preset} value={preset}>
+                            {TRANSITION_LABELS[preset]}
+                          </option>
+                        ))}
+                      </select>
+                    )}
                   </Fragment>
                 ))}
               </div>

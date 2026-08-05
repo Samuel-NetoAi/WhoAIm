@@ -351,7 +351,7 @@ video {
 
 .scene-grid {
   display: grid;
-  grid-template-columns: auto 1fr 1fr;
+  grid-template-columns: auto 1fr 1fr 1fr;
   gap: 0.4rem 0.75rem;
   align-items: center;
 }
@@ -360,4 +360,34 @@ video {
   font-size: 0.85rem;
   color: var(--text-dim);
   white-space: nowrap;
+}
+
+/* Diagnóstico da análise: o que o scenes.json, o alinhamento e o catálogo de
+   trilha realmente produziram. Fica visível porque "carregou" e "funcionou"
+   não podem parecer a mesma coisa. */
+.analysis-notes {
+  list-style: none;
+  margin-top: 0.7rem;
+  padding-left: 0;
+  display: grid;
+  gap: 0.25rem;
+}
+
+.analysis-notes li {
+  font-size: 0.83rem;
+  color: var(--text-dim);
+  padding-left: 0.9rem;
+  position: relative;
+}
+
+.analysis-notes li::before {
+  content: "·";
+  position: absolute;
+  left: 0.15rem;
+  color: var(--accent);
+}
+
+.scene-grid .scene-cue {
+  font-size: 0.75rem;
+  color: var(--text-faint);
 }

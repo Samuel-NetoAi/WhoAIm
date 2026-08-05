@@ -5,8 +5,12 @@ focadas no pipeline do canal; dois motores de voz (um deles de custo zero).
 
 ## Rodar
 
-Clique duplo em **`run.bat`** (ou `python main.py`). A janela abre com o
-núcleo 3D ao centro; fale normalmente — em português.
+**Windows:** clique duplo em **`run.bat`** (ou `python main.py`). A janela abre
+com o núcleo 3D ao centro; fale normalmente — em português.
+
+**Linux:** `export AI_PROJECT_ROOT=~/Ai-Project && ./run.sh`. Sem microfone a
+janela abre em **MODO DIGITADO** e o campo de comando funciona igual — digite
+`diagnostico` para ver o que esta máquina tem e o que falta.
 
 ## Dois motores de voz
 
@@ -18,8 +22,14 @@ force com `"free"` ou `"realtime"`):
 | ouvir | Vosk offline, `models/pt-br` | OpenAI Realtime |
 | pensar | Gemini (camada gratuita) | mesmo modelo da voz |
 | falar | Maria pt-BR (SAPI do Windows) | voz neural |
+| ferramentas | **sim** (function calling do Gemini) | sim |
 | custo | **zero** | pago por minuto |
 | exige | nada (Gemini só p/ frase livre) | saldo na OpenAI |
+
+> As duas rotas usam a MESMA lista de ferramentas (`TOOLS` em `main.py`). Até
+> ago/2026 o motor gratuito recebia o executor e nunca o chamava: o Gemini
+> conversava e respondia como se tivesse executado. Corrigido — agora ele chama
+> a ferramenta de verdade e o resultado volta para ele antes da resposta final.
 
 No modo gratuito **comece a frase com "Alpha"** ("Alpha, pesquisa a Quimera").
 Sem a palavra de ativação ele ignora — senão transcreveria conversa do
@@ -64,12 +74,39 @@ Para fechar: feche a janela, ou diga "encerrar".
 Sem saldo, a UI avisa e segue tentando reconectar a cada 60s — mas os
 **comandos digitados abaixo continuam funcionando**, porque são 100% locais.
 
+## Duas palmas trazem a janela de volta
+
+Com o ALPHA rodando, bata **duas palmas** (intervalo de 0,12 s a 0,7 s): ele
+desminimiza, entra em tela cheia e ganha o foco.
+
+**O que ele NÃO faz — e não tem como fazer:** abrir o app fechado. Alguém
+precisa estar ouvindo o microfone para escutar a palma, e esse alguém é o
+próprio ALPHA. Nos vídeos em que isso aparece, o assistente já estava rodando.
+Para ele estar sempre disponível, deixe-o aberto e minimizado (ou no início
+automático do sistema).
+
+Detalhes que importam:
+
+- escuta o **mesmo fluxo** do Vosk — nenhuma segunda captura do microfone;
+- funciona **mesmo com o microfone mudo**, que é o ponto: o ALPHA não fica
+  transcrevendo a sala, mas continua atendendo ao chamado;
+- é DSP puro em `clap.py`, sem numpy (que não está no venv) e sem `audioop`
+  (removido no Python 3.13). Custa ~0,03 s por 10 s de áudio;
+- o que separa palma de voz alta é o **decaimento**, não o volume: a palma
+  desaba abaixo de 35% do pico em 120 ms, um grito não.
+
+Se disparar sozinho (porta batendo) ou não disparar (microfone fraco), o ajuste
+é `FATOR_DE_PICO` e `PISO_ABSOLUTO` no topo de `clap.py`. Os testes usam áudio
+sintético — `python -m unittest test_palmas` — mas a calibração fina só sai com
+o seu microfone e a sua sala.
+
 ## Modo local — funciona sem créditos e sem internet
 
 Digite no campo "COMMAND INPUT". `ajuda` lista tudo.
 
 | Comando | O que faz |
 |---|---|
+| `diagnostico` | o que esta máquina tem e o que falta (CLI, Studio, modelo, trilhas) |
 | `projetos` | lista os projetos na tela |
 | `dossie <criatura>` | exibe a pesquisa no centro da tela |
 | `roteiro <criatura>` | exibe o roteiro de narração |
@@ -78,7 +115,40 @@ Digite no campo "COMMAND INPUT". `ajuda` lista tudo.
 | `analisar <criatura>` | monta o plano de edição |
 | `renderizar <criatura>` / `short <criatura>` | dispara o render |
 | `status` | progresso dos renders |
+| `pesquisar <criatura>` | **dispara o Claude Code** com a skill `pesquisa-seres` (fase 0) |
+| `produzir <criatura>` | **dispara o Claude Code** com a skill `whoiam` (fases 1–2) |
+| `pipeline` | andamento da pesquisa/produção em curso |
 | `hud` | volta ao rosto do Alpha |
+
+**Substantivo lê, verbo age:** `dossie X` mostra a pesquisa que já existe;
+`pesquisar X` produz uma nova. Confundir os dois fazia parecer que a pesquisa
+tinha falhado quando ela nunca havia começado.
+
+`pesquisar` e `produzir` levam minutos e exigem o **Claude Code instalado e
+logado** nesta máquina — sem isso, o ALPHA diz exatamente o que falta.
+
+## Avisos ativos — o ALPHA fala sem ser perguntado
+
+Tarefas longas não ficam mais em silêncio esperando um "status":
+
+| Quando | O que acontece |
+|---|---|
+| a cada 2 min de pesquisa/produção | linha no log: "ainda trabalhando na pesquisa de X — 4 minutos até agora" |
+| pesquisa/produção termina | **fala**: o que gravou, em qual arquivo, e que já aparece no Studio |
+| a cada 25% de um render | linha no log: "vídeo completo de X: 50 por cento" |
+| render termina | **fala**: nome do arquivo + "diga 'video X' para assistir aqui" |
+| qualquer um falha | **fala** o erro |
+
+Batimento de progresso fica só no log de propósito: ouvir "ainda pesquisando" a
+cada dois minutos cansa mais do que informa.
+
+**Detalhe que evita mentira:** se o Claude terminar com código de sucesso mas
+não gravar os arquivos esperados, o ALPHA diz isso — não "concluído". Esse caso
+só se descobriria abrindo a aba Notas e achando-a vazia.
+
+O canal vive em `tools/notify.py`; o `main.py` o liga na janela
+(`ligar_avisos`). Sem notificador registrado — testes, headless — as mensagens
+somem em silêncio e nunca derrubam a tarefa que avisa.
 
 Qualquer texto que **não** seja um desses comandos é enviado ao modelo de voz
 (e aí sim precisa de créditos).
@@ -100,9 +170,16 @@ Também dá pra digitar no campo de texto da janela em vez de falar.
 ## Testes
 
 ```
-python test_local.py      # comandos locais — roda sem créditos
-python test_headless.py   # voz + ferramentas — precisa de saldo na OpenAI
+python test_local.py                     # comandos locais — roda sem créditos
+python -m unittest test_pesquisa -v      # pesquisa/produção: comando e ferramenta
+python -m unittest test_avisos -v        # avisos de progresso e conclusão
+python -m unittest test_palmas -v        # gesto de palmas, com áudio sintético
+python test_headless.py                  # voz Realtime — precisa de saldo na OpenAI
 ```
+
+`test_pesquisa.py` roda sem áudio, sem crédito e sem internet: ele simula as
+respostas do Gemini para provar que a ferramenta é de fato executada e que o
+resultado dela volta ao modelo.
 
 ## Arquivos
 
@@ -111,5 +188,7 @@ python test_headless.py   # voz + ferramentas — precisa de saldo na OpenAI
 - `tools/local_commands.py` — comandos digitados, 100% offline
 - `tools/studio.py` — ponte HTTP com o Alpha Studio (auto-inicia se offline)
 - `tools/pipeline.py` — dispara Claude Code CLI (fases 0–2 do canal)
+- `tools/notify.py` — canal de aviso ativo (progresso e conclusão)
+- `clap.py` — detector de palmas sobre o fluxo de áudio existente
 - `ui.py` — HUD PyQt6 do Mark + `ViewerPanel` (documentos e vídeo no centro)
 - `config/api_keys.json` — chave OpenAI (local, não versionar)

@@ -3,6 +3,8 @@ import type { Silence } from "../media/detect-silences";
 import type { EditPlan } from "./schema";
 import { DEFAULT_FPS, DEFAULT_TRANSITION_FRAMES } from "./build-naive-plan";
 import { applyBoundaries } from "./apply-boundaries";
+import { resolveOutputResolution, type Resolution } from "./output-resolution";
+import { toBoundaryClips, type ClipDirections } from "./clip-directions";
 
 // How far (in seconds) from an equal-split point we'll look for a nearby
 // pause to snap to. Wide enough to usually find one of the frequent
@@ -42,6 +44,8 @@ export const buildSmartPlan = (
   silences: Silence[],
   fps: number = DEFAULT_FPS,
   transitionFrames: number = DEFAULT_TRANSITION_FRAMES,
+  resolutionOverride?: Partial<Resolution>,
+  directions?: ClipDirections,
 ): EditPlan => {
   const { clips, narration } = probe;
   const numClips = clips.length;
@@ -76,19 +80,15 @@ export const buildSmartPlan = (
     }
   }
 
-  const firstClip = clips[0];
+  const { width, height } = resolveOutputResolution(clips, resolutionOverride);
 
   return applyBoundaries(
-    clips.map((clip) => ({
-      id: clip.id,
-      file: clip.file,
-      durationInSeconds: clip.durationInSeconds,
-    })),
+    toBoundaryClips(clips, directions),
     { file: narration.file, durationInSeconds: totalSeconds },
     snappedBoundarySeconds,
     fps,
     transitionFrames,
-    firstClip.width,
-    firstClip.height,
+    width,
+    height,
   );
 };

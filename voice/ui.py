@@ -1187,6 +1187,7 @@ class MainWindow(QMainWindow):
     _doc_sig    = pyqtSignal(str, str)
     _video_sig  = pyqtSignal(str, str)
     _hud_sig    = pyqtSignal()
+    _frente_sig = pyqtSignal()
 
     def __init__(self, face_path: str):
         super().__init__()
@@ -1264,6 +1265,7 @@ class MainWindow(QMainWindow):
         self._doc_sig.connect(self._show_document)
         self._video_sig.connect(self._show_video)
         self._hud_sig.connect(self.show_hud)
+        self._frente_sig.connect(self._trazer_para_frente)
 
         self._overlay: SetupOverlay | None = None
         self._ready = self._check_config()
@@ -1274,6 +1276,19 @@ class MainWindow(QMainWindow):
         sc_mute.activated.connect(self._toggle_mute)
         sc_full = QShortcut(QKeySequence("F11"), self)
         sc_full.activated.connect(self._toggle_fullscreen)
+
+    def _trazer_para_frente(self):
+        """Chamado pelo gesto de palmas: desminimiza, ocupa a tela e foca.
+
+        Roda sempre na thread da UI (chega por signal) — o detector vive na
+        thread de áudio e não pode tocar em widget.
+        """
+        if self.isMinimized():
+            self.showNormal()
+        if not self.isFullScreen():
+            self.showFullScreen()
+        self.raise_()
+        self.activateWindow()
 
     def _toggle_fullscreen(self):
         if self.isFullScreen():
@@ -1468,6 +1483,7 @@ class MainWindow(QMainWindow):
     _COMANDOS = [
         ("— ver —", None),
         ("ajuda", "lista completa na tela"),
+        ("diagnostico", "o que falta nesta máquina"),
         ("projetos", "todos os projetos"),
         ("status", "progresso dos renders"),
         ("hud", "volta ao núcleo"),
@@ -1481,6 +1497,10 @@ class MainWindow(QMainWindow):
         ("renderizar <nome>", "vídeo completo"),
         ("short <nome>", "short curto"),
         ("abrir <nome>", "no navegador"),
+        ("— criar (Claude) —", None),
+        ("pesquisar <nome>", "dossiê, fase 0"),
+        ("produzir <nome>", "roteiro e prompts"),
+        ("pipeline", "andamento"),
     ]
 
     def _build_commands_panel(self) -> QWidget:
@@ -1815,6 +1835,10 @@ class AlphaUI:
 
     def write_log(self, text: str):
         self._win._log_sig.emit(text)
+
+    def trazer_para_frente(self):
+        """Traz a janela de volta — usado pelo gesto de duas palmas."""
+        self._win._frente_sig.emit()
 
     # Exibição de conteúdo no centro da tela (thread-safe via signals).
     def show_document(self, title: str, markdown_text: str):

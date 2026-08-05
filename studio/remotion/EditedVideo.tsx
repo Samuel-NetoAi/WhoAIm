@@ -2,9 +2,10 @@ import React from "react";
 import { AbsoluteFill, staticFile } from "remotion";
 import { Audio } from "@remotion/media";
 import { TransitionSeries, linearTiming } from "@remotion/transitions";
-import { fade } from "@remotion/transitions/fade";
-import type { EditPlan } from "../lib/edit-plan/schema";
+import { isHardCut, type EditPlan } from "../lib/edit-plan/schema";
 import { Clip } from "./Clip";
+import { presentationFor } from "./transitions";
+import { MusicTrack } from "./MusicTrack";
 
 export const EditedVideo: React.FC<{
   editPlan: EditPlan;
@@ -65,15 +66,26 @@ export const EditedVideo: React.FC<{
             </TransitionSeries.Sequence>
           );
 
+          const next = clips[i + 1];
           if (i === numClips - 1) {
+            return [sequence];
+          }
+
+          // The boundary's transition is declared on the clip that ENTERS it.
+          // A hard cut emits no Transition at all: that keeps both slots whole
+          // and avoids Remotion's "shorter than both neighbours" constraint.
+          const preset = next.transitionFromPrevious ?? "dissolve";
+          if (isHardCut(preset)) {
             return [sequence];
           }
 
           const transition = (
             <TransitionSeries.Transition
               key={`transition-${clip.id}`}
-              presentation={fade()}
-              timing={linearTiming({ durationInFrames: transitionFrames })}
+              presentation={presentationFor(preset)}
+              timing={linearTiming({
+                durationInFrames: next.transitionFrames ?? transitionFrames,
+              })}
             />
           );
 
@@ -81,6 +93,12 @@ export const EditedVideo: React.FC<{
         })}
       </TransitionSeries>
       <Audio src={narrationSrc} volume={narrationVolume} />
+      <MusicTrack
+        music={editPlan.music ?? []}
+        ducking={editPlan.ducking}
+        pauses={editPlan.narrationPauses ?? []}
+        mediaBaseUrl={mediaBaseUrl}
+      />
     </AbsoluteFill>
   );
 };

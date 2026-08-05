@@ -18,6 +18,7 @@ from realtime_engine import RealtimeEngine
 from free_engine import FreeEngine
 from tools import studio_control, pipeline_criatura, handle_local_command
 from tools.local_commands import handle as _local
+from tools.notify import definir_notificador
 
 BASE_DIR = Path(__file__).resolve().parent
 CONFIG_PATH = BASE_DIR / "config" / "api_keys.json"
@@ -151,6 +152,24 @@ def make_tool_executor(ui):
     return execute_tool
 
 
+def ligar_avisos(ui, engine=None) -> None:
+    """Liga o canal de aviso das ferramentas na janela.
+
+    As tarefas longas (pesquisa, render) rodam em thread e não conhecem a UI;
+    elas publicam em `tools.notify` e é aqui que isso vira log — e voz, nos
+    marcos. `ui.write_log` emite um sinal Qt, então é seguro entre threads.
+    """
+
+    def notificador(texto: str, *, falar: bool) -> None:
+        ui.write_log(f"ALPHA: {texto}" if falar else f"SYS: {texto}")
+        # Só o motor gratuito sabe falar um texto arbitrário; o Realtime fala
+        # pelo próprio modelo, então ali o aviso fica no log.
+        if falar and engine is not None and hasattr(engine, "falar"):
+            engine.falar(texto)
+
+    definir_notificador(notificador)
+
+
 def load_config() -> dict:
     return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
 
@@ -204,7 +223,11 @@ def main() -> None:
                 tool_executor=make_tool_executor(ui),
                 ui=ui,
                 local_handler=handle_local_command,
+                # As MESMAS ferramentas da Realtime: sem elas o Gemini só
+                # conversava e dizia ter executado o que nunca rodou.
+                tools=TOOLS,
             )
+            ligar_avisos(ui, engine)
             try:
                 engine.run()  # o motor gratuito já trata local antes do Gemini
             except KeyboardInterrupt:
@@ -219,6 +242,7 @@ def main() -> None:
             tool_executor=make_tool_executor(ui),
             ui=ui,
         )
+        ligar_avisos(ui, engine)
 
         # O campo de texto tenta primeiro os comandos locais (funcionam sem
         # créditos e sem internet); só o que não for comando conhecido vai

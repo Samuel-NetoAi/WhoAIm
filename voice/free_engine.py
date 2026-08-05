@@ -21,6 +21,8 @@ from pathlib import Path
 import requests
 import sounddevice as sd
 
+from clap import DetectorDePalmas
+
 BASE_DIR = Path(__file__).resolve().parent
 MODELO_PT = BASE_DIR / "models" / "pt-br"
 TAXA = 16000
@@ -44,17 +46,26 @@ class FreeEngine:
         tool_executor,
         ui,
         local_handler=None,
+        tools=None,
     ):
         self.gemini_key = gemini_key
         self.instructions = instructions
         self.tool_executor = tool_executor
         self.ui = ui
         self.local_handler = local_handler
+        self.tools = tools or []
 
         self._fila: queue.Queue[bytes] = queue.Queue()
         self._falando = threading.Event()
         self._parar = threading.Event()
         self._voz = None
+        self._voz_indisponivel = False
+        # Os avisos de progresso (pesquisa, render) chegam de threads próprias:
+        # sem serializar, duas falas se sobrepõem e o pyttsx3 quebra.
+        self._trava_voz = threading.Lock()
+        # Duas palmas trazem a janela de volta. Escuta o MESMO fluxo do Vosk —
+        # nenhuma segunda captura do microfone.
+        self._palmas = DetectorDePalmas(taxa=TAXA, ao_detectar=self._ao_bater_palmas)
 
         self.ui.on_text_command = self.processar_texto
 
@@ -75,45 +86,114 @@ class FreeEngine:
         if not texto:
             return
         self.ui.write_log(f"ALPHA: {texto}")
+        # Máquina sem saída de áudio (o Linux secundário) não deve tentar falar
+        # a cada resposta: um motor novo por fala custa caro e a falha se
+        # repetiria em todas. A resposta continua no log, que é o que importa
+        # no modo digitado.
+        if self._voz_indisponivel:
+            return
         # O microfone é ignorado enquanto fala, senão o Vosk transcreve a
         # própria voz do ALPHA saindo pelos alto-falantes.
-        self._falando.set()
-        self.ui.set_state("SPEAKING")
-        try:
-            # pyttsx3 não é seguro entre threads: um motor por fala.
-            motor = self._init_voz()
-            motor.say(texto)
-            motor.runAndWait()
-            motor.stop()
-        except Exception as e:  # noqa: BLE001
-            print(f"[FREE] TTS falhou: {e}")
-        finally:
-            self._falando.clear()
-            if not self.ui.muted:
-                self.ui.set_state("LISTENING")
+        with self._trava_voz:
+            self._falando.set()
+            self.ui.set_state("SPEAKING")
+            try:
+                # pyttsx3 não é seguro entre threads: um motor por fala.
+                motor = self._init_voz()
+                motor.say(texto)
+                motor.runAndWait()
+                motor.stop()
+            except Exception as e:  # noqa: BLE001
+                self._voz_indisponivel = True
+                self.ui.write_log(
+                    f"SYS: voz indisponível ({str(e)[:60]}) — sigo por texto."
+                )
+            finally:
+                self._falando.clear()
+                if not self.ui.muted:
+                    self.ui.set_state("LISTENING")
 
     # ---------- cérebro (Gemini) ----------
 
-    def _perguntar_gemini(self, texto: str) -> str:
-        corpo = {
+    def _declaracoes(self) -> list[dict]:
+        """As ferramentas do `main.py` no formato que o Gemini espera.
+
+        A lista é escrita no formato da OpenAI Realtime (com a chave "type");
+        o Gemini quer só nome, descrição e parâmetros. Converter aqui evita
+        manter duas listas de ferramentas em sincronia.
+        """
+        return [
+            {
+                "name": t["name"],
+                "description": t.get("description", ""),
+                "parameters": t.get("parameters", {"type": "object", "properties": {}}),
+            }
+            for t in self.tools
+        ]
+
+    def _chamar_gemini(self, contents: list[dict]) -> dict:
+        corpo: dict = {
             "systemInstruction": {"parts": [{"text": self.instructions}]},
-            "contents": [{"role": "user", "parts": [{"text": texto}]}],
+            "contents": contents,
             "generationConfig": {"maxOutputTokens": 220, "temperature": 0.7},
         }
+        declaracoes = self._declaracoes()
+        if declaracoes:
+            corpo["tools"] = [{"functionDeclarations": declaracoes}]
+
         r = requests.post(
-            GEMINI_URL,
-            params={"key": self.gemini_key},
-            json=corpo,
-            timeout=45,
+            GEMINI_URL, params={"key": self.gemini_key}, json=corpo, timeout=45
         )
         if not r.ok:
-            return f"O Gemini recusou: {r.status_code}."
-        dados = r.json()
-        try:
-            partes = dados["candidates"][0]["content"]["parts"]
-            return "".join(p.get("text", "") for p in partes).strip()
-        except (KeyError, IndexError):
-            return "Não consegui interpretar a resposta do Gemini."
+            raise RuntimeError(f"O Gemini recusou: {r.status_code}.")
+        return r.json()
+
+    def _perguntar_gemini(self, texto: str) -> str:
+        """Conversa com o Gemini, EXECUTANDO as ferramentas que ele pedir.
+
+        Sem isto o motor gratuito só conversava: o `tool_executor` chegava aqui
+        e nunca era chamado, então um pedido como "pesquisa a Quimera" fazia o
+        ALPHA responder que tinha começado — sem nada ter acontecido. Mentir
+        sobre execução é pior do que não ter a função.
+        """
+        contents: list[dict] = [{"role": "user", "parts": [{"text": texto}]}]
+
+        # Poucas rodadas de propósito: uma cadeia longa de chamadas na camada
+        # gratuita gasta cota e demora mais do que a paciência de quem falou.
+        for _ in range(3):
+            try:
+                dados = self._chamar_gemini(contents)
+            except RuntimeError as e:
+                return str(e)
+
+            try:
+                partes = dados["candidates"][0]["content"]["parts"]
+            except (KeyError, IndexError):
+                return "Não consegui interpretar a resposta do Gemini."
+
+            chamadas = [p["functionCall"] for p in partes if "functionCall" in p]
+            if not chamadas:
+                texto_final = "".join(p.get("text", "") for p in partes).strip()
+                return texto_final or "Pronto."
+
+            contents.append({"role": "model", "parts": partes})
+            respostas = []
+            for chamada in chamadas:
+                nome = chamada.get("name", "")
+                args = chamada.get("args", {}) or {}
+                self.ui.write_log(f"SYS: executando {nome}({json.dumps(args, ensure_ascii=False)})")
+                resultado = self.tool_executor(nome, args)
+                respostas.append(
+                    {
+                        "functionResponse": {
+                            "name": nome,
+                            "response": {"result": resultado},
+                        }
+                    }
+                )
+            contents.append({"role": "user", "parts": respostas})
+
+        return "Fiquei em looping de ferramentas e parei. Tente pelo comando digitado."
 
     # ---------- despacho ----------
 
@@ -135,9 +215,20 @@ class FreeEngine:
 
     # ---------- ouvidos (Vosk) ----------
 
+    def _ao_bater_palmas(self) -> None:
+        self.ui.write_log("SYS: duas palmas — trazendo a janela para a frente.")
+        self.ui.trazer_para_frente()
+
     def _callback(self, indata, frames, tempo, status):
-        if not self._falando.is_set() and not self.ui.muted:
-            self._fila.put(bytes(indata))
+        if self._falando.is_set():
+            return
+        dados = bytes(indata)
+        # As palmas são ouvidas MESMO com o microfone mudo: é assim que o gesto
+        # continua servindo para chamar o ALPHA de volta sem que ele fique
+        # transcrevendo a conversa da sala o tempo todo.
+        self._palmas.alimentar(dados)
+        if not self.ui.muted:
+            self._fila.put(dados)
 
     def run(self) -> None:
         if not MODELO_PT.exists():
@@ -158,13 +249,27 @@ class FreeEngine:
         if not self.ui.muted:
             self.ui.set_state("LISTENING")
 
-        with sd.RawInputStream(
-            samplerate=TAXA,
-            blocksize=BLOCO,
-            dtype="int16",
-            channels=1,
-            callback=self._callback,
-        ):
+        try:
+            entrada = sd.RawInputStream(
+                samplerate=TAXA,
+                blocksize=BLOCO,
+                dtype="int16",
+                channels=1,
+                callback=self._callback,
+            )
+        except Exception as e:  # noqa: BLE001 — sem placa, driver ausente, ocupada
+            # Abrir o stream é o ÚNICO teste honesto: o ALSA anuncia um
+            # dispositivo "default" mesmo numa máquina sem áudio, então
+            # perguntar antes devolve "tem microfone" e mente.
+            # Sem microfone o ALPHA não fica inútil: o campo de comando já está
+            # ligado desde o __init__ e a janela continua servindo por texto.
+            self.ui.write_log(
+                f"SYS: microfone indisponível ({str(e)[:60]}) — MODO DIGITADO. "
+                "Use o campo de comando ('ajuda' lista tudo)."
+            )
+            return
+
+        with entrada:
             while not self._parar.is_set():
                 try:
                     dados = self._fila.get(timeout=0.5)

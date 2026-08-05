@@ -1,7 +1,7 @@
 import React from "react";
 import { CalculateMetadataFunction, Composition } from "remotion";
 import { EditedVideo } from "./EditedVideo";
-import type { EditPlan } from "../lib/edit-plan/schema";
+import { DEFAULT_DUCKING, type EditPlan } from "../lib/edit-plan/schema";
 import { calculateTotalFrames } from "../lib/edit-plan/calculate-total-frames";
 
 type Props = { editPlan: EditPlan };
@@ -36,8 +36,12 @@ const DEFAULT_PLAN: EditPlan = {
       startInNarrationSeconds: 0,
       audioMode: "mix",
       filter: "none",
+      transitionFromPrevious: "dissolve",
     },
   ],
+  music: [],
+  ducking: DEFAULT_DUCKING,
+  narrationPauses: [],
 };
 
 export const RemotionRoot: React.FC = () => {

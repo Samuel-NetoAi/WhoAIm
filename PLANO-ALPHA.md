@@ -17,6 +17,20 @@ O canal opera em 5 fases:
 | Final — Narração | ElevenLabs v3 com tags de entonação | manual | `public/audio/` do projeto |
 | **Nova: Edição** | Sincronizar clipes + narração, Shorts, filtros, pós-processamento | **Alpha Studio** (`C:\Ai-Project\Alpha\studio`) | esta pasta |
 
+## Documentos de referência (2026-08-05)
+
+- `docs/EDICAO-MONTAGEM.md` — gramática de edição do canal: quando cortar,
+  quando dissolver, ritmo por ato, o que fazer quando os clipes não casam.
+- `docs/TRILHA-SONORA.md` — como a música de cada cena é decidida: cue por
+  sequência emocional, silêncio como escolha, biblioteca por função,
+  níveis de mixagem.
+- `docs/PROPOSTAS-2026-08-05.md` — pesquisa dos 6 pedidos (filtros, transições,
+  legendas, conversa do Alpha, publicação) com prioridade e custo.
+- `docs/GIT-E-SINCRONIA.md` — como as duas máquinas conversam: texto
+  sincroniza por git, mídia fica onde está.
+- `DIARIO/` — o que mudou em cada dia de trabalho, para sincronizar as duas
+  máquinas.
+
 ## Layout de pastas (alvo)
 
 ```
@@ -25,6 +39,8 @@ C:\Ai-Project\
 │   ├── PLANO-ALPHA.md            ← este documento
 │   ├── SUGESTOES.md              ← caminhos não tomados, para você decidir depois
 │   ├── studio\                   ← o app web (Next.js + Remotion), movido de Criaturas\RemotionSkill
+│   ├── align\                    ← alinhamento roteiro↔narração (cortes, cues, legendas)
+│   ├── docs\                     ← referências de edição, trilha e propostas
 │   └── Mark-XXXIX-OR-main\       ← referência de agente Python (fase futura, NÃO integrado ainda)
 ├── Criaturas\<Nome>\             ← um projeto por criatura
 │   └── <nome>-video\             ← projeto reconhecido pelo Studio
@@ -58,6 +74,11 @@ os clipes numerados pra lá.
 - [x] Pós-processamento: interpolação de frames (30→60fps) e upscale 2x — ver seção Pós-processamento
 - [x] Botão de download dos renders
 - [x] Aba Notas (dossiê/roteiro/prompts) por projeto — Fases 0–2 persistidas junto do projeto
+- [x] **Alinhamento forçado roteiro↔narração** (`Alpha\align`) — os cortes passam a ser medidos, não estimados; sai também legenda sincronizada
+- [x] **Resolução de saída desacoplada dos clipes** — clipes 480p renderizam em 1080p (mínimo 1080 no lado curto, nunca reduz)
+- [x] **`scenes.json` lido pelo Studio** — filtro e transição por cena vindos da skill `whoiam`
+- [x] **Transição por limite** — 7 presets, todos verificados em render real
+- [x] **Trilha musical** — biblioteca em `Trilhas\` com `catalogo.json`, cue por sequência emocional vindo do `scenes.json`, ducking por frame calculado das pausas da narração, `SILENCIO` como cue de verdade
 
 ## Identidade visual do assistente (2026-08-04)
 
