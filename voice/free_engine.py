@@ -21,6 +21,8 @@ from pathlib import Path
 import requests
 import sounddevice as sd
 
+from clap import DetectorDePalmas
+
 BASE_DIR = Path(__file__).resolve().parent
 MODELO_PT = BASE_DIR / "models" / "pt-br"
 TAXA = 16000
@@ -61,6 +63,9 @@ class FreeEngine:
         # Os avisos de progresso (pesquisa, render) chegam de threads próprias:
         # sem serializar, duas falas se sobrepõem e o pyttsx3 quebra.
         self._trava_voz = threading.Lock()
+        # Duas palmas trazem a janela de volta. Escuta o MESMO fluxo do Vosk —
+        # nenhuma segunda captura do microfone.
+        self._palmas = DetectorDePalmas(taxa=TAXA, ao_detectar=self._ao_bater_palmas)
 
         self.ui.on_text_command = self.processar_texto
 
@@ -210,9 +215,20 @@ class FreeEngine:
 
     # ---------- ouvidos (Vosk) ----------
 
+    def _ao_bater_palmas(self) -> None:
+        self.ui.write_log("SYS: duas palmas — trazendo a janela para a frente.")
+        self.ui.trazer_para_frente()
+
     def _callback(self, indata, frames, tempo, status):
-        if not self._falando.is_set() and not self.ui.muted:
-            self._fila.put(bytes(indata))
+        if self._falando.is_set():
+            return
+        dados = bytes(indata)
+        # As palmas são ouvidas MESMO com o microfone mudo: é assim que o gesto
+        # continua servindo para chamar o ALPHA de volta sem que ele fique
+        # transcrevendo a conversa da sala o tempo todo.
+        self._palmas.alimentar(dados)
+        if not self.ui.muted:
+            self._fila.put(dados)
 
     def run(self) -> None:
         if not MODELO_PT.exists():

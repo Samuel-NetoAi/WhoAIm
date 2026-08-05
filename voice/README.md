@@ -74,6 +74,32 @@ Para fechar: feche a janela, ou diga "encerrar".
 Sem saldo, a UI avisa e segue tentando reconectar a cada 60s — mas os
 **comandos digitados abaixo continuam funcionando**, porque são 100% locais.
 
+## Duas palmas trazem a janela de volta
+
+Com o ALPHA rodando, bata **duas palmas** (intervalo de 0,12 s a 0,7 s): ele
+desminimiza, entra em tela cheia e ganha o foco.
+
+**O que ele NÃO faz — e não tem como fazer:** abrir o app fechado. Alguém
+precisa estar ouvindo o microfone para escutar a palma, e esse alguém é o
+próprio ALPHA. Nos vídeos em que isso aparece, o assistente já estava rodando.
+Para ele estar sempre disponível, deixe-o aberto e minimizado (ou no início
+automático do sistema).
+
+Detalhes que importam:
+
+- escuta o **mesmo fluxo** do Vosk — nenhuma segunda captura do microfone;
+- funciona **mesmo com o microfone mudo**, que é o ponto: o ALPHA não fica
+  transcrevendo a sala, mas continua atendendo ao chamado;
+- é DSP puro em `clap.py`, sem numpy (que não está no venv) e sem `audioop`
+  (removido no Python 3.13). Custa ~0,03 s por 10 s de áudio;
+- o que separa palma de voz alta é o **decaimento**, não o volume: a palma
+  desaba abaixo de 35% do pico em 120 ms, um grito não.
+
+Se disparar sozinho (porta batendo) ou não disparar (microfone fraco), o ajuste
+é `FATOR_DE_PICO` e `PISO_ABSOLUTO` no topo de `clap.py`. Os testes usam áudio
+sintético — `python -m unittest test_palmas` — mas a calibração fina só sai com
+o seu microfone e a sua sala.
+
 ## Modo local — funciona sem créditos e sem internet
 
 Digite no campo "COMMAND INPUT". `ajuda` lista tudo.
@@ -147,6 +173,7 @@ Também dá pra digitar no campo de texto da janela em vez de falar.
 python test_local.py                     # comandos locais — roda sem créditos
 python -m unittest test_pesquisa -v      # pesquisa/produção: comando e ferramenta
 python -m unittest test_avisos -v        # avisos de progresso e conclusão
+python -m unittest test_palmas -v        # gesto de palmas, com áudio sintético
 python test_headless.py                  # voz Realtime — precisa de saldo na OpenAI
 ```
 
@@ -162,5 +189,6 @@ resultado dela volta ao modelo.
 - `tools/studio.py` — ponte HTTP com o Alpha Studio (auto-inicia se offline)
 - `tools/pipeline.py` — dispara Claude Code CLI (fases 0–2 do canal)
 - `tools/notify.py` — canal de aviso ativo (progresso e conclusão)
+- `clap.py` — detector de palmas sobre o fluxo de áudio existente
 - `ui.py` — HUD PyQt6 do Mark + `ViewerPanel` (documentos e vídeo no centro)
 - `config/api_keys.json` — chave OpenAI (local, não versionar)
