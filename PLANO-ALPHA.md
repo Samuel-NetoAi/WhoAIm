@@ -26,6 +26,8 @@ O canal opera em 5 fases:
   níveis de mixagem.
 - `docs/PROPOSTAS-2026-08-05.md` — pesquisa dos 6 pedidos (filtros, transições,
   legendas, conversa do Alpha, publicação) com prioridade e custo.
+- `docs/GIT-E-SINCRONIA.md` — como as duas máquinas conversam: texto
+  sincroniza por git, mídia fica onde está.
 - `DIARIO/` — o que mudou em cada dia de trabalho, para sincronizar as duas
   máquinas.
 
