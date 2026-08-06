@@ -1,6 +1,6 @@
 """Detector de PALMAS no fluxo de áudio que já existe.
 
-Serve para chamar o ALPHA de volta à tela quando ele está minimizado, sem
+Serve para chamar o OMEGA de volta à tela quando ele está minimizado, sem
 teclado e sem palavra de ativação. Bate palma duas vezes e ele aparece.
 
 Por que DSP em vez de modelo: uma palma é acusticamente simples — um estouro
@@ -14,7 +14,7 @@ faria isso na biblioteca padrão, foi removido no Python 3.13. Cada janela de
 `array` faz a desempacotagem em C.
 
 O detector NÃO abre o app fechado: alguém precisa estar ouvindo o microfone
-para escutar a palma, e esse alguém é o próprio ALPHA rodando. Ele traz de
+para escutar a palma, e esse alguém é o próprio OMEGA rodando. Ele traz de
 volta o que está minimizado; não ressuscita o que não existe.
 """
 

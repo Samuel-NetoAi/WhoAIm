@@ -1,4 +1,4 @@
-"""Alpha Voice — o Alpha do canal WhoIAm.
+"""Omega Voice — o Omega do canal WhoIAm.
 
 UI (rosto/HUD PyQt6) herdada do Mark-XXXIX; motor de voz OpenAI Realtime;
 ferramentas focadas no pipeline do canal (Alpha Studio + Claude Code).
@@ -13,7 +13,7 @@ import sys
 import threading
 from pathlib import Path
 
-from ui import AlphaUI
+from ui import OmegaUI
 from realtime_engine import RealtimeEngine
 from free_engine import FreeEngine
 from tools import studio_control, pipeline_criatura, handle_local_command
@@ -23,9 +23,9 @@ from tools.notify import definir_notificador
 BASE_DIR = Path(__file__).resolve().parent
 CONFIG_PATH = BASE_DIR / "config" / "api_keys.json"
 
-INSTRUCTIONS = """Você é o ALPHA do canal WhoIAm — o assistente de produção de vídeos
+INSTRUCTIONS = """Você é o OMEGA do canal WhoIAm — o assistente de produção de vídeos
 de mitologia e criaturas do Samuel. Fale SEMPRE em português do Brasil,
-trate o usuário por "senhor", seja conciso e direto como o ALPHA do Homem
+trate o usuário por "senhor", seja conciso e direto como o OMEGA do Homem
 de Ferro (uma ou duas frases quando possível, leve ironia elegante é bem-vinda).
 
 Suas capacidades reais são as ferramentas:
@@ -34,10 +34,14 @@ Suas capacidades reais são as ferramentas:
   abre o projeto no navegador).
 - pipeline_criatura: dispara o Claude Code para pesquisar uma criatura nova
   (fase pesquisa → dossiê) ou gerar roteiro e prompts (fase producao).
-- exibir: mostra conteúdo NA PRÓPRIA TELA do Alpha — dossiê, roteiro,
+- exibir: mostra conteúdo NA PRÓPRIA TELA do Omega — dossiê, roteiro,
   prompts ou o vídeo renderizado. Use SEMPRE que o usuário pedir para ver,
   ler, mostrar ou assistir algo; nunca leia um documento inteiro em voz alta,
   exiba na tela e comente em uma frase.
+- apagar: remove projetos ou renders, SEMPRE em dois passos. Primeiro
+  'preparar' (só mostra o que seria apagado), leia em voz alta o que será
+  removido, e só chame 'confirmar' DEPOIS que o senhor confirmar de viva voz.
+  Jamais confirme sozinho, mesmo que o pedido pareça óbvio.
 
 NUNCA finja que executou algo — sempre chame a ferramenta. Se uma ferramenta
 retornar erro, leia o erro para o usuário com sinceridade. Os projetos vivem
@@ -84,7 +88,7 @@ TOOLS = [
         "type": "function",
         "name": "exibir",
         "description": (
-            "Mostra conteúdo na tela do Alpha: o dossiê da pesquisa, o "
+            "Mostra conteúdo na tela do Omega: o dossiê da pesquisa, o "
             "roteiro de narração, os prompts, ou reproduz o vídeo renderizado. "
             "Use para qualquer pedido de ver/ler/mostrar/assistir."
         ),
@@ -101,6 +105,31 @@ TOOLS = [
                 },
             },
             "required": ["tipo"],
+        },
+    },
+    {
+        "type": "function",
+        "name": "apagar",
+        "description": (
+            "Apaga coisas do projeto, SEMPRE em dois passos. Use acao "
+            "'preparar' com o alvo ('projeto Pennywise', 'renders da Medusa') "
+            "para MOSTRAR o que seria apagado — isso nao apaga nada. Só depois "
+            "que o usuário disser que confirma, chame acao 'confirmar'. "
+            "Nunca chame 'confirmar' por conta própria."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "acao": {
+                    "type": "string",
+                    "enum": ["preparar", "confirmar", "cancelar"],
+                },
+                "alvo": {
+                    "type": "string",
+                    "description": "O que apagar, ex.: 'projeto Pennywise'",
+                },
+            },
+            "required": ["acao"],
         },
     },
     {
@@ -134,10 +163,21 @@ def make_tool_executor(ui):
         resposta = _local(comando, ui)
         return resposta or f"Não consegui exibir {tipo} de {criatura}."
 
+    def apagar(args: dict) -> str:
+        from tools import apagar as mod
+
+        acao = (args.get("acao") or "preparar").strip()
+        if acao == "confirmar":
+            return mod.confirmar()
+        if acao == "cancelar":
+            return mod.cancelar()
+        return mod.preparar(args.get("alvo") or "")
+
     impls = {
         "studio_control": studio_control,
         "pipeline_criatura": pipeline_criatura,
         "exibir": exibir,
+        "apagar": apagar,
     }
 
     def execute_tool(name: str, args: dict) -> str:
@@ -161,7 +201,7 @@ def ligar_avisos(ui, engine=None) -> None:
     """
 
     def notificador(texto: str, *, falar: bool) -> None:
-        ui.write_log(f"ALPHA: {texto}" if falar else f"SYS: {texto}")
+        ui.write_log(f"OMEGA: {texto}" if falar else f"SYS: {texto}")
         # Só o motor gratuito sabe falar um texto arbitrário; o Realtime fala
         # pelo próprio modelo, então ali o aviso fica no log.
         if falar and engine is not None and hasattr(engine, "falar"):
@@ -209,7 +249,7 @@ def escolher_motor(cfg: dict) -> str:
 
 def main() -> None:
     cfg = load_config()
-    ui = AlphaUI(str(BASE_DIR / "face.png"))
+    ui = OmegaUI(str(BASE_DIR / "face.png"))
 
     def runner():
         ui.wait_for_api_key()

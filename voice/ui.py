@@ -48,30 +48,31 @@ _OS = platform.system()  # "Windows" | "Darwin" | "Linux"
 
 
 class C:
-    """Paleta ALPHA — violeta sobre quase-preto, com dourado e magenta de
-    acento (mesma lógica do style.txt do canal: um tom primário que brilha,
-    dourado para atividade, magenta para alerta/refratário)."""
-    BG        = "#050208"   # quase preto com viés roxo
-    PANEL     = "#0c0618"
-    PANEL2    = "#120a20"
-    BORDER    = "#33205a"
-    BORDER_B  = "#6b3fb0"
-    BORDER_A  = "#4a2b80"
-    PRI       = "#b57bff"   # violeta principal
-    PRI_DIM   = "#7a4fc0"
-    PRI_GHO   = "#1c0f33"
-    ACC       = "#ffaa00"   # dourado
-    ACC2      = "#ffcc33"
-    GREEN     = "#00ff9d"
-    GREEN_D   = "#00b36e"
-    RED       = "#ff3377"
-    MUTED_C   = "#ff00aa"   # magenta
-    TEXT      = "#e4d4ff"
-    TEXT_DIM  = "#8a6bc0"
-    TEXT_MED  = "#b394e0"
-    WHITE     = "#f2e9ff"
-    DARK      = "#0a0512"
-    BAR_BG    = "#150a26"
+    """Paleta OMEGA — brasa: vermelho-alaranjado sobre quase-preto quente,
+    com âmbar de atividade e magenta de alerta. Mesma lógica do style.txt do
+    canal (um tom primário que brilha, um de atividade, um de alerta), só
+    deslocada do violeta para o fogo."""
+    BG        = "#080302"   # quase preto com viés quente
+    PANEL     = "#170806"
+    PANEL2    = "#1e0b08"
+    BORDER    = "#5c2416"
+    BORDER_B  = "#b4522c"
+    BORDER_A  = "#7d3520"
+    PRI       = "#ff6a3d"   # laranja-brasa principal
+    PRI_DIM   = "#c04a28"
+    PRI_GHO   = "#2c0f08"
+    ACC       = "#ffb020"   # âmbar
+    ACC2      = "#ffd257"
+    GREEN     = "#4ade80"
+    GREEN_D   = "#2f9e5c"
+    RED       = "#ff2d55"
+    MUTED_C   = "#ff2d55"   # vermelho vivo para "mudo"
+    TEXT      = "#ffe3d4"
+    TEXT_DIM  = "#bd8468"
+    TEXT_MED  = "#e0a684"
+    WHITE     = "#fff3ea"
+    DARK      = "#0d0504"
+    BAR_BG    = "#210c07"
 
 
 def qcol(h: str, a: int = 255) -> QColor:
@@ -257,12 +258,12 @@ except ImportError:  # pragma: no cover - ambiente sem WebEngine
 
 
 class NeuralScene(QWidget if not _WEBENGINE else QWebEngineView):
-    """Núcleo 3D do ALPHA — a cena WebGL de `scene/neural.html`.
+    """Núcleo 3D do OMEGA — a cena WebGL de `scene/neural.html`.
 
     É o mesmo motor do style.txt do canal (rede neural bioelétrica em
     Three.js), deslocado para violeta e sem o HUD próprio: o HUD é a janela
     Qt em volta. Os estados do assistente são repassados para a cena, então
-    o núcleo dispara impulsos quando o ALPHA fala.
+    o núcleo dispara impulsos quando o OMEGA fala.
     """
 
     def __init__(self, parent=None):
@@ -287,7 +288,7 @@ class NeuralScene(QWidget if not _WEBENGINE else QWebEngineView):
     def set_state(self, mode: str, muted: bool):
         if not (_WEBENGINE and self._pronto):
             return
-        js = f"window.alphaState && window.alphaState({mode!r}, {str(bool(muted)).lower()});"
+        js = f"window.omegaState && window.omegaState({mode!r}, {str(bool(muted)).lower()});"
         self.page().runJavaScript(js)
 
 
@@ -502,7 +503,7 @@ class HudCanvas(QWidget):
             p.setPen(QPen(qcol(C.PRI, min(255, int(self._halo * 2))), 1))
             p.setFont(QFont("Courier New", 13, QFont.Weight.Bold))
             p.drawText(QRectF(cx - 80, cy - 14, 160, 28),
-                       Qt.AlignmentFlag.AlignCenter, "A.L.P.H.A")
+                       Qt.AlignmentFlag.AlignCenter, "O.M.E.G.A")
 
         # particles
         for pt in self._particles:
@@ -798,7 +799,7 @@ class FileDropZone(QWidget):
 
     def _browse(self):
         path, _ = QFileDialog.getOpenFileName(
-            self, "Select a file for ALPHA", str(Path.home()),
+            self, "Select a file for OMEGA", str(Path.home()),
             "All Files (*.*);;"
             "Images (*.jpg *.jpeg *.png *.gif *.webp *.bmp *.svg);;"
             "Documents (*.pdf *.docx *.txt *.md *.pptx);;"
@@ -953,7 +954,7 @@ class SetupOverlay(QWidget):
             return w
 
         layout.addWidget(_lbl("◈  INITIALISATION REQUIRED", 13, True))
-        layout.addWidget(_lbl("Configure o ALPHA antes do primeiro boot.", 9, color=C.PRI_DIM))
+        layout.addWidget(_lbl("Configure o OMEGA antes do primeiro boot.", 9, color=C.PRI_DIM))
         layout.addSpacing(6)
 
         sep = QFrame(); sep.setFrameShape(QFrame.Shape.HLine)
@@ -1076,7 +1077,7 @@ class SetupOverlay(QWidget):
 
 class ViewerPanel(QWidget):
     """Área central alternativa ao HUD: exibe documentos (dossiê, roteiro,
-    prompts) e o vídeo renderizado sem sair da interface do Alpha."""
+    prompts) e o vídeo renderizado sem sair da interface do Omega."""
 
     def __init__(self):
         super().__init__()
@@ -1168,6 +1169,20 @@ class ViewerPanel(QWidget):
         self._doc.show()
         self._doc.verticalScrollBar().setValue(0)
 
+    def show_image(self, title: str, file_path: str):
+        """Exibe uma imagem reaproveitando o painel de texto (via HTML), em
+        vez de mais um widget: menos código e o mesmo enquadramento."""
+        self._player.stop()
+        self._video.hide()
+        self._ctrl_host.hide()
+        self._title.setText(f"▸ {title.upper()}")
+        url = QUrl.fromLocalFile(str(file_path)).toString()
+        self._doc.setHtml(
+            f'<div align="center"><img src="{url}" width="620"></div>'
+        )
+        self._doc.show()
+        self._doc.verticalScrollBar().setValue(0)
+
     def show_video(self, title: str, file_path: str):
         self._doc.hide()
         self._title.setText(f"▸ {title.upper()}")
@@ -1186,12 +1201,13 @@ class MainWindow(QMainWindow):
     _state_sig  = pyqtSignal(str)
     _doc_sig    = pyqtSignal(str, str)
     _video_sig  = pyqtSignal(str, str)
+    _img_sig    = pyqtSignal(str, str)
     _hud_sig    = pyqtSignal()
     _frente_sig = pyqtSignal()
 
     def __init__(self, face_path: str):
         super().__init__()
-        self.setWindowTitle("A.L.P.H.A — WhoIAm")
+        self.setWindowTitle("O.M.E.G.A — WhoIAm")
         self.setMinimumSize(_MIN_W, _MIN_H)
         self.resize(_DEFAULT_W, _DEFAULT_H)
 
@@ -1264,6 +1280,7 @@ class MainWindow(QMainWindow):
         # na thread principal, então tudo passa por signal.
         self._doc_sig.connect(self._show_document)
         self._video_sig.connect(self._show_video)
+        self._img_sig.connect(self._show_image)
         self._hud_sig.connect(self.show_hud)
         self._frente_sig.connect(self._trazer_para_frente)
 
@@ -1289,6 +1306,49 @@ class MainWindow(QMainWindow):
             self.showFullScreen()
         self.raise_()
         self.activateWindow()
+        # No Windows o acima não basta: o SO proíbe um processo em segundo
+        # plano de tomar o foco (só pisca o botão na barra de tarefas). Sem
+        # este empurrão nativo, o gesto de palmas "funcionava" no log e nada
+        # acontecia na tela.
+        self._forcar_foco_windows()
+
+    def _forcar_foco_windows(self):
+        if platform.system() != "Windows":
+            return
+        try:
+            import ctypes
+
+            user32 = ctypes.windll.user32
+            kernel32 = ctypes.windll.kernel32
+            hwnd = int(self.winId())
+
+            SW_RESTORE = 9
+            HWND_TOPMOST, HWND_NOTOPMOST = -1, -2
+            SWP_NOSIZE, SWP_NOMOVE, SWP_SHOWWINDOW = 0x1, 0x2, 0x40
+            flags = SWP_NOSIZE | SWP_NOMOVE | SWP_SHOWWINDOW
+
+            user32.ShowWindow(hwnd, SW_RESTORE)
+
+            # Truque padrão: ligar-se à thread de quem está em foco faz o
+            # Windows aceitar a troca em vez de apenas piscar o ícone.
+            janela_ativa = user32.GetForegroundWindow()
+            tid_ativa = user32.GetWindowThreadProcessId(janela_ativa, None)
+            tid_nossa = kernel32.GetCurrentThreadId()
+            anexou = False
+            if tid_ativa and tid_ativa != tid_nossa:
+                anexou = bool(user32.AttachThreadInput(tid_ativa, tid_nossa, True))
+
+            user32.BringWindowToTop(hwnd)
+            user32.SetForegroundWindow(hwnd)
+            # Sobe e desce de "sempre visível": garante o topo sem deixar a
+            # janela presa por cima de tudo depois.
+            user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, flags)
+            user32.SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, flags)
+
+            if anexou:
+                user32.AttachThreadInput(tid_ativa, tid_nossa, False)
+        except Exception as e:  # noqa: BLE001 — foco é conveniência, não crítico
+            print(f"[UI] foco forçado falhou: {e}")
 
     def _toggle_fullscreen(self):
         if self.isFullScreen():
@@ -1371,11 +1431,11 @@ class MainWindow(QMainWindow):
             l.setStyleSheet(f"color: {color}; background: transparent;")
             return l
 
-        lay.addWidget(_badge("ALPHA", C.PRI_DIM))
+        lay.addWidget(_badge("OMEGA", C.PRI_DIM))
         lay.addStretch()
 
         mid = QVBoxLayout(); mid.setSpacing(1)
-        title = QLabel("A.L.P.H.A")
+        title = QLabel("O.M.E.G.A")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title.setFont(QFont("Courier New", 17, QFont.Weight.Bold))
         title.setStyleSheet(f"color: {C.PRI}; background: transparent;")
@@ -1482,25 +1542,31 @@ class MainWindow(QMainWindow):
     # criatura (ex.: "dossie medusa").
     _COMANDOS = [
         ("— ver —", None),
-        ("ajuda", "lista completa na tela"),
-        ("diagnostico", "o que falta nesta máquina"),
+        ("ajuda", "lista completa"),
         ("projetos", "todos os projetos"),
-        ("status", "progresso dos renders"),
-        ("hud", "volta ao núcleo"),
+        ("progresso", "renders em curso"),
+        ("voltar", "volta ao núcleo"),
         ("— conteúdo —", None),
-        ("dossie <nome>", "a pesquisa"),
+        ("pesquisa <nome>", "o que foi apurado"),
         ("roteiro <nome>", "a narração"),
-        ("prompts <nome>", "os prompts"),
+        ("cenas <nome>", "descrições de imagem"),
         ("video <nome>", "último render"),
+        ("ler <nome>", "lê a pesquisa em voz alta"),
+        ("parar", "interrompe a leitura"),
+        ("imagem <descrição>", "gera imagem (OpenAI)"),
         ("— produção —", None),
         ("analisar <nome>", "plano de edição"),
-        ("renderizar <nome>", "vídeo completo"),
-        ("short <nome>", "short curto"),
+        ("montar <nome>", "vídeo completo"),
+        ("corte <nome>", "versão curta"),
         ("abrir <nome>", "no navegador"),
         ("— criar (Claude) —", None),
-        ("pesquisar <nome>", "dossiê, fase 0"),
-        ("produzir <nome>", "roteiro e prompts"),
-        ("pipeline", "andamento"),
+        ("pesquisar <nome>", "produz a pesquisa"),
+        ("produzir <nome>", "roteiro e cenas"),
+        ("andamento", "como vai"),
+        ("— apagar —", None),
+        ("apagar projeto <nome>", "pede confirmação"),
+        ("confirmar", "executa"),
+        ("cancelar", "desiste"),
     ]
 
     def _build_commands_panel(self) -> QWidget:
@@ -1673,7 +1739,7 @@ class MainWindow(QMainWindow):
 
         lay.addWidget(_fl("[F4] Mute  ·  [F11] Fullscreen"))
         lay.addStretch()
-        lay.addWidget(_fl("WhoIAm  ·  ALPHA  ·  CENTRAL DE PRODUÇÃO"))
+        lay.addWidget(_fl("WhoIAm  ·  OMEGA  ·  CENTRAL DE PRODUÇÃO"))
         lay.addStretch()
         lay.addWidget(_fl("© WHOIAM", C.PRI_DIM))
         return w
@@ -1684,7 +1750,7 @@ class MainWindow(QMainWindow):
         cat  = _file_category(p)
         icon, _ = _FILE_ICONS.get(cat, _FILE_ICONS["unknown"])
         size = _fmt_size(p.stat().st_size)
-        self._file_hint.setText(f"{icon}  {p.name}  ·  {size}  ·  Tell ALPHA what to do with it")
+        self._file_hint.setText(f"{icon}  {p.name}  ·  {size}  ·  Tell OMEGA what to do with it")
         self._log.append_log(f"FILE: {p.name} ({size}) loaded")
         if self.on_text_command:
             msg = (
@@ -1743,6 +1809,10 @@ class MainWindow(QMainWindow):
         self.viewer.show_document(title, text)
         self._center.setCurrentWidget(self.viewer)
 
+    def _show_image(self, title: str, path: str):
+        self.viewer.show_image(title, path)
+        self._center.setCurrentWidget(self.viewer)
+
     def _show_video(self, title: str, path: str):
         self.viewer.show_video(title, path)
         self._center.setCurrentWidget(self.viewer)
@@ -1752,7 +1822,7 @@ class MainWindow(QMainWindow):
         self._center.setCurrentWidget(self.nucleo)
 
     def _check_config(self) -> bool:
-        # Alpha Voice only needs the OpenAI key (Realtime API is both the
+        # Omega Voice only needs the OpenAI key (Realtime API is both the
         # ears and the voice); gemini/openrouter stay with the original Mark.
         if not API_FILE.exists(): return False
         try:
@@ -1790,7 +1860,7 @@ class MainWindow(QMainWindow):
             self._overlay.hide()
             self._overlay = None
         self._apply_state("LISTENING")
-        self._log.append_log(f"SYS: Initialised. OS={os_name.upper()}. ALPHA online.")
+        self._log.append_log(f"SYS: Initialised. OS={os_name.upper()}. OMEGA online.")
 
 class _RootShim:
     def __init__(self, app: QApplication):
@@ -1801,7 +1871,7 @@ class _RootShim:
         pass
 
 
-class AlphaUI:
+class OmegaUI:
     def __init__(self, face_path: str, size=None):
         self._app = QApplication.instance() or QApplication(sys.argv)
         self._app.setStyle("Fusion")
@@ -1846,6 +1916,9 @@ class AlphaUI:
 
     def show_video(self, title: str, file_path: str):
         self._win._video_sig.emit(title, file_path)
+
+    def show_image(self, title: str, file_path: str):
+        self._win._img_sig.emit(title, file_path)
 
     def show_hud(self):
         self._win._hud_sig.emit()

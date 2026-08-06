@@ -1,4 +1,4 @@
-"""Gera o face.png do HUD a partir do ícone do canal, no estilo ALPHA.
+"""Gera o face.png do HUD a partir do ícone do canal, no estilo OMEGA.
 
 Tratamento: recorte quadrado → duotone violeta (sombras quase pretas,
 luzes em violeta neon) → contraste → brilho externo (bloom). O resultado
@@ -18,10 +18,10 @@ ORIGEM_PADRAO = Path(r"C:\Ai-Project\IconePerfil.jpg")
 DESTINO = Path(__file__).resolve().parent / "face.png"
 LADO = 512
 
-# Extremos do duotone: sombra roxo-escura, luz violeta neon (o --cyan do
-# style.txt, deslocado para o roxo que o Samuel pediu).
-SOMBRA = (14, 5, 30)
-LUZ = (214, 168, 255)
+# Extremos do duotone: sombra roxo-escura, luz laranja-brasa (o --cyan do
+# style.txt, deslocado para o fogo que o Samuel pediu).
+SOMBRA = (30, 6, 2)
+LUZ = (255, 176, 130)
 
 
 def gerar(origem: Path) -> None:

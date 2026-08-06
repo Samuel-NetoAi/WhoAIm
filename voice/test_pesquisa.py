@@ -1,4 +1,4 @@
-"""Testa o caminho "mande o ALPHA pesquisar uma criatura" — sem áudio.
+"""Testa o caminho "mande o OMEGA pesquisar uma criatura" — sem áudio.
 
 Duas rotas levam ao Claude Code, e as duas precisavam de conserto:
 

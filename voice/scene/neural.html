@@ -2,16 +2,16 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8" />
-<title>ALPHA — núcleo</title>
+<title>OMEGA — núcleo</title>
 <style>
-  /* Derivado do style.txt do canal, deslocado para violeta.
+  /* Derivado do style.txt do canal, deslocado para o fogo (brasa).
      Os painéis de HUD do original foram removidos: quem desenha HUD aqui é
      a janela PyQt6 em volta. Sobram a cena 3D + scanlines + vinheta. */
   :root {
-    --violet: #b57bff;
+    --violet: #ff6a3d;
     --gold: #ffaa00;
     --magenta: #ff00aa;
-    --bg-dark: #050208;
+    --bg-dark: #080302;
   }
 
   body, html {
@@ -47,7 +47,7 @@
     z-index: 20;
     font-family: 'Segoe UI', system-ui, sans-serif;
     font-size: 11px; letter-spacing: 2px; text-transform: uppercase;
-    color: rgba(181, 123, 255, 0.55);
+    color: rgba(255, 106, 61, 0.55);
     text-align: center;
   }
 </style>
@@ -131,14 +131,14 @@ const CONFIG = {
     maxDistDendrite: 35.0,
     maxDistAxon: 50.0,
     colors: {
-        // Paleta ALPHA: o "cyan" do original virou violeta; o azul profundo
+        // Paleta OMEGA: o "cyan" do original virou laranja-brasa; o azul
         // virou roxo. Dourado e magenta seguem como no style.txt.
-        cyan: new THREE.Color('#b57bff'),
-        blue: new THREE.Color('#2a1060'),
-        gold: new THREE.Color('#ffaa00'),
-        orange: new THREE.Color('#ff6a00'),
-        magenta: new THREE.Color('#ff00aa'),
-        violet: new THREE.Color('#7c3aff')
+        cyan: new THREE.Color('#ff6a3d'),
+        blue: new THREE.Color('#5a1206'),
+        gold: new THREE.Color('#ffb020'),
+        orange: new THREE.Color('#ff8c1a'),
+        magenta: new THREE.Color('#ff2d55'),
+        violet: new THREE.Color('#ff2d55')
     }
 };
 
@@ -160,7 +160,7 @@ const uniforms = {
 };
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.FogExp2(0x050208, 0.015);
+scene.fog = new THREE.FogExp2(0x080302, 0.015);
 
 const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 500);
 camera.position.set(30, 20, 40);
@@ -443,8 +443,8 @@ function fireImpulse() {
     STATE.progress = 0;
 }
 
-// Ponte com o Python: a janela chama isto a cada mudança de estado do ALPHA.
-window.alphaState = function (mode, muted) {
+// Ponte com o Python: a janela chama isto a cada mudança de estado do OMEGA.
+window.omegaState = function (mode, muted) {
     STATE.mode = mode || 'LISTENING';
     STATE.muted = !!muted;
     controls.autoRotateSpeed = STATE.mode === 'THINKING' ? 2.2 : 0.6;
@@ -511,7 +511,7 @@ animate();
 } catch (err) {
     // Sem internet o import do three.js falha: avisa em vez de ficar preto.
     document.getElementById('fallback').style.display = 'flex';
-    console.error('[ALPHA] núcleo 3D falhou:', err);
+    console.error('[OMEGA] núcleo 3D falhou:', err);
 }
 </script>
 </body>

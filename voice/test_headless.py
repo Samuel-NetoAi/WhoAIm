@@ -1,4 +1,4 @@
-"""Teste do Alpha Voice sem microfone: valida chave, protocolo Realtime,
+"""Teste do Omega Voice sem microfone: valida chave, protocolo Realtime,
 declaração de tools, round-trip de function call com o Studio REAL e
 resposta final em texto. Rodar: python test_headless.py
 """

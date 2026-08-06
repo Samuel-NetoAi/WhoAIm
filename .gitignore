@@ -44,3 +44,6 @@ renders/
 .DS_Store
 Thumbs.db
 *.log
+
+# Imagens geradas pela OpenAI — artefato reproduzível, não código.
+voice/imagens/

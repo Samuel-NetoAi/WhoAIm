@@ -139,10 +139,35 @@ def _get_projects() -> list[dict]:
 
 
 def _find_project(name: str) -> dict | None:
-    """Match por nome falado ('medusa', 'baba yaga'), tolerante a acentos."""
+    """Match por nome falado, tolerante ao que o reconhecimento erra.
+
+    A versão antiga exigia que o texto falado fosse SUBSTRING do nome do
+    projeto — "e a coisas" não casava com "IT A Coisa" e o comando morria.
+    Agora reaproveita o resolvedor tolerante (idêntico → apelido → palavra
+    marcante → semelhança), casando pelo nome da pasta que ele devolve.
+    """
+    from .projetos import resolver
+
+    projetos = _get_projects()
+    if not projetos:
+        return None
+
+    pasta, _ = resolver(name)
+    if pasta is not None:
+        alvo = pasta.name.lower().replace(" ", "")
+        for p in projetos:
+            if alvo in (p["creatureName"] + p["projectDirName"]).lower().replace(
+                " ", ""
+            ).replace("/", ""):
+                return p
+
+    # Rede de segurança: o comportamento antigo, para projetos que existem no
+    # Studio (ex.: pasta Animes) mas não em Criaturas.
     needle = name.strip().lower().replace(" ", "")
-    for p in _get_projects():
-        haystack = (p["creatureName"] + p["projectDirName"]).lower().replace(" ", "").replace("/", "")
+    for p in projetos:
+        haystack = (
+            (p["creatureName"] + p["projectDirName"]).lower().replace(" ", "").replace("/", "")
+        )
         if needle and needle in haystack:
             return p
     return None
@@ -168,6 +193,35 @@ def studio_control(args: dict) -> str:
                     f"{p['creatureName']}: {p['clipCount']} clipes, {status}"
                 )
             return f"{len(projects)} projeto(s): " + "; ".join(parts)
+
+        # O progresso é dos jobs já disparados: não exige projeto, e
+        # exigir fazia "progresso" responder "não achei projeto ".
+        if action == "status":
+            if not _last_jobs:
+                return "Nenhum render foi iniciado por voz nesta sessão."
+            frases = []
+            for target, job in list(_last_jobs.items()):
+                r = requests.get(
+                    f"{STUDIO_URL}/api/projects/{job['pid']}/render/{job['jobId']}",
+                    timeout=10,
+                )
+                if not r.ok:
+                    frases.append(f"{target}: status indisponível")
+                    continue
+                j = r.json()["job"]
+                tipo = {"full": "vídeo completo", "short": "Short", "post": "pós-processamento"}.get(
+                    j["target"], j["target"]
+                )
+                if j["status"] == "rendering":
+                    frases.append(f"{tipo} de {job['label']}: {round(j['progress'] * 100)} por cento")
+                elif j["status"] == "done":
+                    nome = Path(j.get("outputPath", "")).name
+                    frases.append(f"{tipo} de {job['label']}: pronto, arquivo {nome}")
+                    _last_jobs.pop(target, None)
+                else:
+                    frases.append(f"{tipo} de {job['label']}: erro — {j.get('error', '?')[:80]}")
+                    _last_jobs.pop(target, None)
+            return ". ".join(frases) + "."
 
         # Todas as ações abaixo precisam de um projeto.
         project = _find_project(project_name)
@@ -216,33 +270,6 @@ def studio_control(args: dict) -> str:
                 f"Render do {tipo} de {label} iniciado. "
                 "Vou avisando o progresso e quando ficar pronto."
             )
-
-        if action == "status":
-            if not _last_jobs:
-                return "Nenhum render foi iniciado por voz nesta sessão."
-            frases = []
-            for target, job in list(_last_jobs.items()):
-                r = requests.get(
-                    f"{STUDIO_URL}/api/projects/{job['pid']}/render/{job['jobId']}",
-                    timeout=10,
-                )
-                if not r.ok:
-                    frases.append(f"{target}: status indisponível")
-                    continue
-                j = r.json()["job"]
-                tipo = {"full": "vídeo completo", "short": "Short", "post": "pós-processamento"}.get(
-                    j["target"], j["target"]
-                )
-                if j["status"] == "rendering":
-                    frases.append(f"{tipo} de {job['label']}: {round(j['progress'] * 100)} por cento")
-                elif j["status"] == "done":
-                    nome = Path(j.get("outputPath", "")).name
-                    frases.append(f"{tipo} de {job['label']}: pronto, arquivo {nome}")
-                    _last_jobs.pop(target, None)
-                else:
-                    frases.append(f"{tipo} de {job['label']}: erro — {j.get('error', '?')[:80]}")
-                    _last_jobs.pop(target, None)
-            return ". ".join(frases) + "."
 
         if action == "open":
             webbrowser.open(f"{STUDIO_URL}/projects/{pid}")

@@ -37,7 +37,7 @@ def main() -> int:
     ui = UIFalsa()
     motor = FreeEngine(
         gemini_key=chaves.get("gemini_api_key", ""),
-        instructions="Você é o ALPHA. Responda em uma frase curta, em português.",
+        instructions="Você é o OMEGA. Responda em uma frase curta, em português.",
         tool_executor=lambda n, a: "ok",
         ui=ui,
     )
@@ -65,7 +65,7 @@ def main() -> int:
 
     print("[3] voz (SAPI Maria pt-BR)")
     try:
-        motor.falar("Alpha operacional em modo gratuito.")
+        motor.falar("Omega operacional em modo gratuito.")
         print("    OK — falou sem erro")
     except Exception as e:  # noqa: BLE001
         falhas.append(f"TTS: {e}")

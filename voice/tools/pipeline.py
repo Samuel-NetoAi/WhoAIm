@@ -18,6 +18,7 @@ import unicodedata
 from pathlib import Path
 
 from .notify import batimento, duracao_falada, notificar
+from .vocabulario import mesma_criatura
 
 # Mesma variável que o Studio usa (lib/projects/constants.ts), para as duas
 # metades do sistema concordarem sobre onde os projetos vivem. O padrão é a
@@ -110,7 +111,28 @@ def _run_claude(creature: str, phase: str) -> None:
 
     try:
         proc = subprocess.run(
-            [executavel, "-p", prompt, "--permission-mode", "acceptEdits"],
+            # --allowedTools é OBRIGATÓRIO: em modo headless o CLI começa sem
+            # acesso à web, e a `pesquisa-seres` existe justamente para cruzar
+            # web + transcrições do YouTube. Sem isto ela "termina" em ~1
+            # minuto sem pesquisar nada nem gravar arquivo — o sintoma que
+            # parecia bug de caminho. Bash entra por causa do script de
+            # transcrição que a skill executa.
+            [
+                executavel,
+                "-p",
+                prompt,
+                "--permission-mode",
+                "acceptEdits",
+                "--allowedTools",
+                "WebSearch",
+                "WebFetch",
+                "Read",
+                "Write",
+                "Edit",
+                "Bash",
+                "Glob",
+                "Grep",
+            ],
             cwd=str(AI_PROJECT_ROOT),
             capture_output=True,
             text=True,
@@ -175,6 +197,22 @@ def _run_claude(creature: str, phase: str) -> None:
         notificar(_current["result"], falar=True)
 
 
+def _projeto_equivalente(creature: str) -> str | None:
+    """Nome de um projeto já existente que seja o MESMO ser, ou None."""
+    raiz = AI_PROJECT_ROOT / "Criaturas"
+    if not raiz.exists():
+        return None
+    for pasta in raiz.iterdir():
+        if not pasta.is_dir():
+            continue
+        if not mesma_criatura(creature, pasta.name):
+            continue
+        # Só conta se a pesquisa realmente existir lá.
+        if (pasta / f"{_slugify(pasta.name)}-video" / "notes" / "dossie.md").exists():
+            return pasta.name
+    return None
+
+
 def pipeline_criatura(args: dict) -> str:
     action = (args.get("action") or "start").strip()
 
@@ -191,6 +229,17 @@ def pipeline_criatura(args: dict) -> str:
         return "Me diga o nome da criatura."
     if phase not in ("pesquisa", "producao"):
         return "A fase precisa ser pesquisa ou producao."
+
+    # Um ser com dois nomes viraria dois projetos (foi o que aconteceu com
+    # "Pennywise" e "IT"). Avisa em vez de pesquisar de novo o que já existe.
+    if phase == "pesquisa" and not args.get("forcar"):
+        existente = _projeto_equivalente(creature)
+        if existente:
+            return (
+                f"Já existe pesquisa para esse ser, no projeto {existente}. "
+                f"{creature} e {existente} são o mesmo. Diga 'pesquisa de novo' "
+                "se quiser refazer mesmo assim."
+            )
 
     if _resolver_claude() is None:
         return (

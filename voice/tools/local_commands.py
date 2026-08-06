@@ -1,6 +1,6 @@
 """Comandos de texto que rodam 100% local — sem OpenAI, sem internet.
 
-Existem para que o Alpha seja útil mesmo sem créditos na conta: ler o que as
+Existem para que o Omega seja útil mesmo sem créditos na conta: ler o que as
 skills geraram, listar projetos, abrir o vídeo renderizado, disparar render.
 Tudo isso é arquivo local + a API do Studio em localhost, nada externo.
 
@@ -21,43 +21,74 @@ from .studio import studio_control
 # AI_PROJECT_ROOT, e ter duas constantes divergindo fazia o leitor de notas
 # procurar num caminho e a pesquisa gravar em outro.
 from .pipeline import AI_PROJECT_ROOT, pipeline_criatura
+from . import apagar as _apagar
+from . import leitura as _leitura
+from . import imagens as _imagens
+from .projetos import frase_de_ajuda as _ajuda_projeto
+from .projetos import resolver as _resolver_projeto
 
+# Os nomes de comando são escolhidos para serem TRANSCRITOS bem, não para
+# serem bonitos. Palavra estrangeira ("dossiê", "prompts", "short") sai
+# deformada do reconhecimento — "dossiê" já virou "torcedor" e "doce e do
+# lixo". A forma preferida é sempre a portuguesa comum; as estrangeiras
+# continuam valendo para quem digita.
 NOTE_ALIASES = {
+    # dossiê -> diga "pesquisa"
+    "pesquisa": "dossie",
+    "pesquisas": "dossie",
     "dossie": "dossie",
     "dossier": "dossie",
-    "pesquisa": "dossie",
+    "dossiê": "dossie",
+    # roteiro (palavra portuguesa, transcreve bem)
     "roteiro": "roteiro",
     "narracao": "roteiro",
+    "narração": "roteiro",
+    "texto": "roteiro",
+    # prompts -> diga "cenas"
+    "cenas": "prompts",
+    "cena": "prompts",
+    "imagens": "prompts",
     "prompts": "prompts",
     "prompt": "prompts",
 }
 
-AJUDA = """# Comandos locais (funcionam sem créditos)
+AJUDA = """# Comandos (funcionam sem créditos)
+
+> **Fale as palavras em NEGRITO.** Elas foram escolhidas por serem
+> portuguesas e comuns — o reconhecimento de voz erra feio em palavra
+> estrangeira ("dossiê" já virou *torcedor*). As formas em inglês continuam
+> valendo quando você digita.
 
 **Ver conteúdo**
-- `diagnostico` — o que esta máquina tem e o que falta
-- `projetos` — lista os projetos encontrados
-- `dossie <criatura>` — exibe a pesquisa aqui na tela
-- `roteiro <criatura>` — exibe o roteiro de narração
-- `prompts <criatura>` — exibe os prompts (model sheets, storyboards, Seedance)
-- `video <criatura>` — toca o último vídeo renderizado, aqui mesmo
-- `hud` — volta para o rosto do Alpha
+- **`pesquisa <criatura>`** — exibe a pesquisa na tela *(= dossiê)*
+- **`roteiro <criatura>`** — exibe o roteiro de narração
+- **`cenas <criatura>`** — exibe as descrições de imagem *(= prompts)*
+- **`video <criatura>`** — toca o último vídeo renderizado
+- **`ler <criatura>`** — **lê a pesquisa em voz alta** (voz do Windows,
+  para não gastar créditos da ElevenLabs); vale também "me lê o roteiro de X"
+- **`parar`** — interrompe a leitura
+- **`imagem <descrição>`** — gera uma imagem pela OpenAI e exibe
+  *(precisa de saldo na conta OpenAI)*
+- **`projetos`** — lista os projetos encontrados
+- **`voltar`** — volta para o núcleo do OMEGA *(= hud)*
+- **`diagnostico`** — o que esta máquina tem e o que falta
 
 **Agir — edição**
-- `analisar <criatura>` — analisa clipes + narração e monta o plano de edição
-- `renderizar <criatura>` — renderiza o vídeo completo
-- `short <criatura>` — renderiza o Short
-- `status` — progresso dos renders em andamento
+- **`analisar <criatura>`** — monta o plano de edição
+- **`montar <criatura>`** — renderiza o vídeo completo *(= renderizar)*
+- **`corte <criatura>`** — renderiza a versão curta *(= short)*
+- **`progresso`** — como estão os renders *(= status)*
 
 **Agir — pesquisa e roteiro (dispara o Claude Code)**
-- `pesquisar <criatura>` — monta o dossiê com a skill `pesquisa-seres` (fase 0)
-- `produzir <criatura>` — roteiro e prompts com a skill `whoiam` (fases 1–2)
-- `pipeline` — andamento da pesquisa/produção em curso
+- **`pesquisar <criatura>`** — produz a pesquisa (fase 0)
+- **`produzir <criatura>`** — roteiro e cenas (fases 1–2)
+- **`andamento`** — como vai a pesquisa em curso *(= pipeline)*
 
-> Repare: `dossie X` **lê** o que já existe; `pesquisar X` **produz**.
-> Leva minutos e exige o Claude Code instalado e logado neste computador.
+**Apagar** (sempre em dois passos, e vai para a lixeira)
+- **`apagar projeto <criatura>`** → depois **`confirmar`** ou **`cancelar`**
 
-**Com créditos na OpenAI**, é só falar naturalmente — sem decorar comando.
+> Repare na diferença: **`pesquisa X`** *lê* o que já existe;
+> **`pesquisar X`** *produz* do zero (leva minutos).
 """
 
 
@@ -72,37 +103,100 @@ def _slugify(value: str) -> str:
 
 
 def _pasta_da_criatura(creature: str) -> Path | None:
-    """A pasta da criatura, tolerante à grafia digitada.
+    """A pasta da criatura a partir de um nome possivelmente mal falado.
 
-    Devolve None em vez de estourar quando a raiz não existe — este módulo
-    responde por frases faladas, e um traceback vira silêncio na cara do
-    usuário. Acontece de verdade quando a máquina não é a do Windows ou o
-    AI_PROJECT_ROOT está errado.
+    Delega ao resolvedor tolerante: "e a coisas" e "it" chegam em
+    "IT A Coisa". Continua devolvendo None (em vez de estourar) quando não
+    dá para decidir — este módulo responde por frases faladas, e um
+    traceback viraria silêncio na cara do usuário.
     """
-    criaturas = AI_PROJECT_ROOT / "Criaturas"
-    exata = criaturas / creature
-    if exata.is_dir():
-        return exata
-    if not criaturas.is_dir():
+    pasta, _ = _resolver_projeto(creature)
+    return pasta
+
+
+# Verbos que revelam intenção de OUVIR, não de ver. Vêm antes da
+# palavra-chave na frase: "me lê a pesquisa da Medusa".
+_VERBOS_DE_LEITURA = {"ler", "leia", "le", "lê", "leiame", "narrar", "narre",
+                      "recitar", "recite", "ouvir", "escutar", "conta",
+                      "conte", "fala", "fale"}
+
+
+def _quer_ouvir(raw: str) -> bool:
+    return any(_norm(p) in _VERBOS_DE_LEITURA for p in raw.split())
+
+
+_VERBOS_DE_IMAGEM = {"imagem", "imagina", "desenha", "desenhar",
+                     "ilustra", "ilustrar", "gerar-imagem"}
+
+
+# Toda palavra-chave que inicia um comando com alvo. A ordem não importa:
+# vence a que aparecer primeiro na frase.
+_VERBOS_COM_ALVO = (
+    _VERBOS_DE_LEITURA
+    | _VERBOS_DE_IMAGEM
+    | set(NOTE_ALIASES)
+    | {"video", "vídeo", "assistir", "analisar", "analise", "analisa",
+       "montar", "monta", "gerar", "gera", "renderizar", "renderiza", "render",
+       "corte", "corta", "resumo", "short", "abrir", "abre",
+       "apagar", "apaga", "deletar", "deleta", "remover", "remove",
+       "pesquisar", "pesquise", "investigar", "investigue",
+       "produzir", "produza", "roteirizar", "roteirize"}
+)
+
+# Preposições, artigos e substantivos genéricos que sobram grudados no alvo
+# ("do it a coisa", "o video da medusa").
+_LIXO_INICIAL = {"o", "a", "os", "as", "do", "da", "dos", "das", "de", "no",
+                 "na", "em", "sobre", "para", "pra", "meu", "minha",
+                 "video", "vídeo", "projeto", "arquivo", "pasta"}
+
+
+def _extrair_verbo_e_alvo(raw: str) -> tuple[str, str] | None:
+    """Acha a palavra-chave na frase e devolve (verbo, alvo).
+
+    "me mostra a pesquisa do it a coisa" -> ("pesquisa", "it a coisa")
+    Devolve None quando não há palavra-chave alguma — aí quem chama manda
+    para o modelo de linguagem.
+    """
+    palavras = raw.split()
+
+    def varrer(aceitas: set[str]) -> tuple[str, str] | None:
+        for i, palavra in enumerate(palavras):
+            verbo = _norm(palavra)
+            if verbo not in aceitas:
+                continue
+            resto = palavras[i + 1:]
+            # Tira artigos/preposições do começo do alvo, senão "do it a
+            # coisa" e "it a coisa" viram buscas diferentes.
+            while resto and _norm(resto[0]) in _LIXO_INICIAL:
+                resto = resto[1:]
+            alvo = " ".join(resto).strip()
+            if alvo:
+                return verbo, alvo
         return None
-    for d in criaturas.iterdir():
-        if d.is_dir() and _norm(d.name) == _norm(creature):
-            return d
-    return None
+
+    # O QUE ele quer ver ganha de COMO ("abrir a pesquisa da Medusa" é pedido
+    # de ver a pesquisa, não de abrir o navegador). Sem esta prioridade o
+    # verbo genérico, por vir antes na frase, sequestrava o comando.
+    return varrer(set(NOTE_ALIASES)) or varrer(_VERBOS_COM_ALVO)
 
 
 def _read_note(creature: str, note: str) -> tuple[str, str] | str:
     """Devolve (titulo, conteudo) ou uma frase de erro."""
-    pasta = _pasta_da_criatura(creature)
-    candidates = []
-    if pasta is not None:
-        candidates.append(pasta / f"{_slugify(pasta.name)}-video" / "notes" / f"{note}.md")
-    for path in candidates:
-        if path.exists():
-            return (f"{note} — {creature}", path.read_text(encoding="utf-8"))
-    rotulo = {"dossie": "dossiê", "roteiro": "roteiro", "prompts": "prompts"}[note]
+    pasta, candidatos = _resolver_projeto(creature)
+    if pasta is None:
+        # Melhor dizer quais existem do que só negar: o nome quase sempre
+        # chegou deformado pelo reconhecimento de voz.
+        return _ajuda_projeto(creature, candidatos)
+    # Daqui em diante usa o nome REAL do projeto, não o que foi falado: se
+    # "e a coisas" virou "IT A Coisa", o usuário precisa ver isso na tela
+    # para confiar que abriu o certo.
+    nome = pasta.name
+    rotulos = {"dossie": "pesquisa", "roteiro": "roteiro", "prompts": "cenas"}
+    caminho = pasta / f"{_slugify(nome)}-video" / "notes" / f"{note}.md"
+    if caminho.exists():
+        return (f"{rotulos[note]} — {nome}", caminho.read_text(encoding="utf-8"))
     return (
-        f"Ainda não existe {rotulo} para {creature}. "
+        f"Ainda não existe {rotulos[note]} para {nome}. "
         f"Peça a pesquisa primeiro (ou gere pelo Claude)."
     )
 
@@ -121,7 +215,7 @@ def _latest_render(creature: str) -> Path | None:
 
 
 def _diagnostico() -> tuple[str, str, str]:
-    """Estado de cada peça de que o ALPHA depende, nesta máquina.
+    """Estado de cada peça de que o OMEGA depende, nesta máquina.
 
     Existe porque as duas máquinas do projeto têm capacidades diferentes e a
     falha silenciosa é o padrão: sem CLI, a pesquisa não roda; sem Studio, o
@@ -130,7 +224,7 @@ def _diagnostico() -> tuple[str, str, str]:
     """
     from .pipeline import AI_PROJECT_ROOT as RAIZ_PIPELINE, _resolver_claude
 
-    linhas: list[str] = ["# Diagnóstico do ALPHA", ""]
+    linhas: list[str] = ["# Diagnóstico do OMEGA", ""]
     problemas = 0
 
     def item(rotulo: str, ok: bool, detalhe: str) -> None:
@@ -214,7 +308,7 @@ def handle(text: str, ui) -> str | None:
         ui.show_document("ajuda", AJUDA)
         return "Comandos exibidos na tela."
 
-    if low in ("hud", "voltar", "rosto"):
+    if low in ("voltar", "inicio", "início", "tela", "hud", "rosto"):
         ui.show_hud()
         return "De volta ao HUD."
 
@@ -239,10 +333,20 @@ def handle(text: str, ui) -> str | None:
         ui.show_document("projetos", doc)
         return f"{len(projetos)} projeto(s) na tela."
 
-    if low == "status":
+    if low in ("progresso", "status", "situacao", "situação"):
         return studio_control({"action": "status"})
 
-    if low in ("pipeline", "pesquisa?", "andamento"):
+    # Confirmação de exclusão: vem antes de tudo para que um "confirmar" solto
+    # nunca seja interpretado como outra coisa.
+    if low in ("parar", "para", "chega", "silencio", "silêncio", "cala"):
+        return _leitura.parar()
+
+    if low in ("confirmar", "confirma", "confirmado", "pode apagar", "sim apaga"):
+        return _apagar.confirmar()
+    if low in ("cancelar", "cancela", "deixa", "esquece", "nao apaga", "não apaga"):
+        return _apagar.cancelar()
+
+    if low in ("andamento", "trabalho", "como esta", "como está", "pipeline"):
         return pipeline_criatura({"action": "status"})
 
     if low in ("diagnostico", "diagnóstico", "checar", "check"):
@@ -250,11 +354,23 @@ def handle(text: str, ui) -> str | None:
         ui.show_document(titulo, doc)
         return resumo
 
-    # Comandos com argumento: "<verbo> <criatura>"
-    partes = raw.split(None, 1)
-    if len(partes) < 2:
+    # Comandos com argumento. Ninguém fala "pesquisa medusa" — fala "me
+    # mostra a pesquisa da Medusa". Procuramos a palavra-chave em QUALQUER
+    # posição e tomamos o resto como alvo; sem isso a frase inteira ia parar
+    # no Gemini (que vive estourando a cota gratuita).
+    achado = _extrair_verbo_e_alvo(raw)
+    if achado is None:
         return None
-    verbo, alvo = _norm(partes[0]), partes[1].strip()
+    verbo, alvo = achado
+
+    if verbo in _VERBOS_DE_LEITURA:
+        # "lê a Medusa" sem dizer o quê: assume a pesquisa.
+        resultado = _read_note(alvo, "dossie")
+        if isinstance(resultado, str):
+            return resultado
+        titulo, conteudo = resultado
+        ui.show_document(titulo, conteudo)
+        return _leitura.ler(titulo, conteudo, ui)
 
     if verbo in NOTE_ALIASES:
         nota = NOTE_ALIASES[verbo]
@@ -263,7 +379,17 @@ def handle(text: str, ui) -> str | None:
             return resultado
         titulo, conteudo = resultado
         ui.show_document(titulo, conteudo)
+        # "ler a pesquisa da Medusa" exibe E lê; "pesquisa da Medusa" só
+        # exibe. A intenção de ouvir vem do verbo dito antes da palavra-chave.
+        if _quer_ouvir(raw):
+            return _leitura.ler(titulo, conteudo, ui)
         return f"{titulo} na tela."
+
+    if verbo in _VERBOS_DE_IMAGEM:
+        # "imagem da Medusa em pedra" -> gera e exibe. Se o texto
+        # citar um projeto conhecido, a imagem é salva junto dele.
+        pasta, _ = _resolver_projeto(alvo)
+        return _imagens.gerar(alvo, pasta.name if pasta else None, ui)
 
     if verbo in ("video", "vídeo", "assistir"):
         caminho = _latest_render(alvo)
@@ -275,14 +401,17 @@ def handle(text: str, ui) -> str | None:
     if verbo in ("analisar", "analise", "analisa"):
         return studio_control({"action": "analyze", "project": alvo})
 
-    if verbo in ("renderizar", "renderiza", "render"):
+    if verbo in ("montar", "monta", "gerar", "gera", "renderizar", "renderiza", "render"):
         return studio_control({"action": "render_full", "project": alvo})
 
-    if verbo == "short":
+    if verbo in ("corte", "corta", "resumo", "short"):
         return studio_control({"action": "render_short", "project": alvo})
 
     if verbo in ("abrir", "abre"):
         return studio_control({"action": "open", "project": alvo})
+
+    if verbo in ("apagar", "apaga", "deletar", "deleta", "remover", "remove"):
+        return _apagar.preparar(alvo)
 
     # Verbo = AGIR, substantivo = LER. "dossie X" mostra a pesquisa que já
     # existe; "pesquisar X" dispara o Claude Code para produzi-la. Sem essa

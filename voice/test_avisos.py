@@ -1,4 +1,4 @@
-"""Testa o canal de aviso ATIVO — o ALPHA falando sem ser perguntado.
+"""Testa o canal de aviso ATIVO — o OMEGA falando sem ser perguntado.
 
 Antes, pesquisa e render rodavam em silêncio por minutos e só respondiam a
 "status". Estes testes cobrem o que passou a avisar sozinho, e principalmente

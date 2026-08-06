@@ -24,7 +24,7 @@ SONDA = """
     tamanho: c ? c.width + 'x' + c.height : null,
     webgl: !!gl,
     fallback: fb ? getComputedStyle(fb).display : '?',
-    ponte: typeof window.alphaState
+    ponte: typeof window.omegaState
   });
 })();
 """

@@ -1,4 +1,4 @@
-# ALPHA — assistente de voz do canal WhoIAm
+# OMEGA — assistente de voz do canal WhoIAm
 
 Interface herdada do Mark-XXXIX, retematizada em violeta; ferramentas
 focadas no pipeline do canal; dois motores de voz (um deles de custo zero).
@@ -31,7 +31,7 @@ force com `"free"` ou `"realtime"`):
 > conversava e respondia como se tivesse executado. Corrigido — agora ele chama
 > a ferramenta de verdade e o resultado volta para ele antes da resposta final.
 
-No modo gratuito **comece a frase com "Alpha"** ("Alpha, pesquisa a Quimera").
+No modo gratuito **comece a frase com "Omega"** ("Omega, pesquisa a Quimera").
 Sem a palavra de ativação ele ignora — senão transcreveria conversa do
 ambiente e responderia sozinho. A conversa é por turnos, não fluida como a
 Realtime: fale, espere a resposta, fale de novo.
@@ -44,8 +44,8 @@ no gratuito sem travar. Testar as três peças: `python test_free.py`.
 **Centro = núcleo 3D** (`scene/neural.html`): a rede neural bioelétrica em
 Three.js do `style.txt` do canal, deslocada para violeta e sem o HUD próprio
 (quem desenha HUD é a janela Qt em volta). Ela reage aos estados: quando o
-ALPHA fala, o núcleo dispara impulsos; pensando, gira mais rápido; mudo,
-o brilho cai. A ponte é `window.alphaState(modo, mudo)`, chamada pelo Python.
+OMEGA fala, o núcleo dispara impulsos; pensando, gira mais rápido; mudo,
+o brilho cai. A ponte é `window.omegaState(modo, mudo)`, chamada pelo Python.
 
 > Precisa de internet na primeira carga (o three.js vem de CDN); depois o
 > QtWebEngine mantém em cache. Sem conexão e sem cache a cena mostra
@@ -76,19 +76,19 @@ Sem saldo, a UI avisa e segue tentando reconectar a cada 60s — mas os
 
 ## Duas palmas trazem a janela de volta
 
-Com o ALPHA rodando, bata **duas palmas** (intervalo de 0,12 s a 0,7 s): ele
+Com o OMEGA rodando, bata **duas palmas** (intervalo de 0,12 s a 0,7 s): ele
 desminimiza, entra em tela cheia e ganha o foco.
 
 **O que ele NÃO faz — e não tem como fazer:** abrir o app fechado. Alguém
 precisa estar ouvindo o microfone para escutar a palma, e esse alguém é o
-próprio ALPHA. Nos vídeos em que isso aparece, o assistente já estava rodando.
+próprio OMEGA. Nos vídeos em que isso aparece, o assistente já estava rodando.
 Para ele estar sempre disponível, deixe-o aberto e minimizado (ou no início
 automático do sistema).
 
 Detalhes que importam:
 
 - escuta o **mesmo fluxo** do Vosk — nenhuma segunda captura do microfone;
-- funciona **mesmo com o microfone mudo**, que é o ponto: o ALPHA não fica
+- funciona **mesmo com o microfone mudo**, que é o ponto: o OMEGA não fica
   transcrevendo a sala, mas continua atendendo ao chamado;
 - é DSP puro em `clap.py`, sem numpy (que não está no venv) e sem `audioop`
   (removido no Python 3.13). Custa ~0,03 s por 10 s de áudio;
@@ -118,16 +118,16 @@ Digite no campo "COMMAND INPUT". `ajuda` lista tudo.
 | `pesquisar <criatura>` | **dispara o Claude Code** com a skill `pesquisa-seres` (fase 0) |
 | `produzir <criatura>` | **dispara o Claude Code** com a skill `whoiam` (fases 1–2) |
 | `pipeline` | andamento da pesquisa/produção em curso |
-| `hud` | volta ao rosto do Alpha |
+| `hud` | volta ao rosto do Omega |
 
 **Substantivo lê, verbo age:** `dossie X` mostra a pesquisa que já existe;
 `pesquisar X` produz uma nova. Confundir os dois fazia parecer que a pesquisa
 tinha falhado quando ela nunca havia começado.
 
 `pesquisar` e `produzir` levam minutos e exigem o **Claude Code instalado e
-logado** nesta máquina — sem isso, o ALPHA diz exatamente o que falta.
+logado** nesta máquina — sem isso, o OMEGA diz exatamente o que falta.
 
-## Avisos ativos — o ALPHA fala sem ser perguntado
+## Avisos ativos — o OMEGA fala sem ser perguntado
 
 Tarefas longas não ficam mais em silêncio esperando um "status":
 
@@ -143,7 +143,7 @@ Batimento de progresso fica só no log de propósito: ouvir "ainda pesquisando" 
 cada dois minutos cansa mais do que informa.
 
 **Detalhe que evita mentira:** se o Claude terminar com código de sucesso mas
-não gravar os arquivos esperados, o ALPHA diz isso — não "concluído". Esse caso
+não gravar os arquivos esperados, o OMEGA diz isso — não "concluído". Esse caso
 só se descobriria abrindo a aba Notas e achando-a vazia.
 
 O canal vive em `tools/notify.py`; o `main.py` o liga na janela

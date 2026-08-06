@@ -1,11 +1,11 @@
-"""Motor de voz do Alpha Voice: OpenAI Realtime API via WebSocket puro.
+"""Motor de voz do Omega Voice: OpenAI Realtime API via WebSocket puro.
 
 WebSocket direto (sem SDK) porque o protocolo JSON é estável e assim o
 receptor pode aceitar tanto os nomes de evento beta (response.audio.delta)
 quanto os GA (response.output_audio.delta) sem depender da versão da lib.
 
 Áudio: PCM16 mono 24kHz nos dois sentidos, capturado/tocado com sounddevice.
-Enquanto o Alpha fala, o microfone não é enviado (sem cancelamento de eco
+Enquanto o Omega fala, o microfone não é enviado (sem cancelamento de eco
 local, o modelo ouviria a si mesmo pelos alto-falantes).
 """
 
@@ -232,7 +232,7 @@ class RealtimeEngine:
             ):
                 txt = (event.get("transcript") or "").strip()
                 if txt:
-                    self.ui.write_log(f"Alpha: {txt}")
+                    self.ui.write_log(f"Omega: {txt}")
 
             elif etype == "response.function_call_arguments.done":
                 asyncio.create_task(
@@ -270,7 +270,7 @@ class RealtimeEngine:
 
                     await self._send(self._session_update())
                     print("[VOICE] Conectado.")
-                    self.ui.write_log("SYS: Alpha Voice online (OpenAI Realtime).")
+                    self.ui.write_log("SYS: Omega Voice online (OpenAI Realtime).")
                     if not self.ui.muted:
                         self.ui.set_state("LISTENING")
 

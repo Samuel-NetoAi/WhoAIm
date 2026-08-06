@@ -1,4 +1,4 @@
-"""Motor de voz GRATUITO do ALPHA — funciona sem gastar um centavo.
+"""Motor de voz GRATUITO do OMEGA — funciona sem gastar um centavo.
 
 Cadeia: ouvidos = Vosk (offline, modelo pt-BR em models/pt-br),
 cérebro = Gemini (chave do Samuel, camada gratuita) apenas quando o texto
@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import queue
+from difflib import SequenceMatcher
 import threading
 import time
 from pathlib import Path
@@ -22,6 +23,7 @@ import requests
 import sounddevice as sd
 
 from clap import DetectorDePalmas
+from tools.vocabulario import corrigir as corrigir_vocabulario
 
 BASE_DIR = Path(__file__).resolve().parent
 MODELO_PT = BASE_DIR / "models" / "pt-br"
@@ -34,8 +36,22 @@ GEMINI_URL = (
 )
 
 # Palavra de ativação: sem ela, o Vosk transcreveria conversa aleatória do
-# ambiente e o ALPHA responderia sozinho o tempo todo.
-DESPERTAR = ("alpha", "alfa")
+# ambiente e o OMEGA responderia sozinho o tempo todo. O Vosk erra o nome
+# com frequência (é palavra estrangeira), então aceitamos as variantes que
+# ele realmente produz.
+# "Ômega" é palavra portuguesa comum — o modelo pt-BR a reconhece muito
+# melhor que "Alpha" (estrangeira). Ainda assim listamos as variantes que
+# o Vosk costuma produzir.
+DESPERTAR = ("omega", "ômega", "o mega", "omegas", "amega", "omeca")
+
+# Quantas palavras iniciais podem vir antes do nome. O Vosk costuma grudar
+# um "é", "ó" ou ruído no começo da frase; exigir que o nome seja a PRIMEIRA
+# palavra fazia o comando inteiro ser descartado em silêncio.
+MARGEM_DESPERTAR = 3
+
+# Depois de atendido, o OMEGA continua ouvindo por este tempo sem exigir o
+# nome de novo — conversa em vez de interrogatório.
+JANELA_CONVERSA = 25.0
 
 
 class FreeEngine:
@@ -58,6 +74,7 @@ class FreeEngine:
         self._fila: queue.Queue[bytes] = queue.Queue()
         self._falando = threading.Event()
         self._parar = threading.Event()
+        self._janela_ate = 0.0  # fim da janela de conversa (time.monotonic)
         self._voz = None
         self._voz_indisponivel = False
         # Os avisos de progresso (pesquisa, render) chegam de threads próprias:
@@ -68,8 +85,48 @@ class FreeEngine:
         self._palmas = DetectorDePalmas(taxa=TAXA, ao_detectar=self._ao_bater_palmas)
 
         self.ui.on_text_command = self.processar_texto
+        # Os comandos locais precisam falar (leitura de documentos em voz
+        # alta); expomos a fala pela UI para não acoplar os dois módulos.
+        self.ui.falar = self.falar
 
     # ---------- voz (SAPI / Maria pt-BR) ----------
+
+    def _falar_elevenlabs(self, texto: str) -> bool:
+        """Fala pela ElevenLabs. False = não deu, use a voz do Windows."""
+        try:
+            from tools import elevenlabs_voz
+
+            if not elevenlabs_voz.disponivel():
+                return False
+            wav = elevenlabs_voz.sintetizar(texto)
+            if not wav:
+                if elevenlabs_voz._estado["sem_credito"]:
+                    self.ui.write_log(
+                        "SYS: créditos da ElevenLabs acabaram — voltando à voz do Windows."
+                    )
+                return False
+
+            import wave
+
+            with wave.open(str(wav), "rb") as f:
+                taxa, canais = f.getframerate(), f.getnchannels()
+                dados = f.readframes(f.getnframes())
+
+            # RawOutputStream evita depender do numpy (que não está instalado)
+            # e é o mesmo mecanismo já usado no resto do motor.
+            stream = sd.RawOutputStream(
+                samplerate=taxa, channels=canais, dtype="int16"
+            )
+            stream.start()
+            try:
+                stream.write(dados)
+            finally:
+                stream.stop()
+                stream.close()
+            return True
+        except Exception as e:  # noqa: BLE001 — qualquer falha volta pra Maria
+            self.ui.write_log(f"SYS: ElevenLabs falhou ({str(e)[:50]}) — voz local.")
+            return False
 
     def _init_voz(self):
         import pyttsx3
@@ -82,10 +139,17 @@ class FreeEngine:
         motor.setProperty("rate", 190)
         return motor
 
-    def falar(self, texto: str) -> None:
+    def falar(self, texto: str, economico: bool = False) -> None:
+        """Fala uma resposta.
+
+        `economico=True` pula a ElevenLabs e usa a voz do Windows. Serve para
+        LEITURA de documentos: um dossiê tem ~27 mil caracteres e a conta
+        gratuita da ElevenLabs dá 10 mil créditos POR MÊS — ler um único
+        documento com ela consumiria quase três meses de cota.
+        """
         if not texto:
             return
-        self.ui.write_log(f"ALPHA: {texto}")
+        self.ui.write_log(f"OMEGA: {texto}")
         # Máquina sem saída de áudio (o Linux secundário) não deve tentar falar
         # a cada resposta: um motor novo por fala custa caro e a falha se
         # repetiria em todas. A resposta continua no log, que é o que importa
@@ -93,11 +157,16 @@ class FreeEngine:
         if self._voz_indisponivel:
             return
         # O microfone é ignorado enquanto fala, senão o Vosk transcreve a
-        # própria voz do ALPHA saindo pelos alto-falantes.
+        # própria voz do OMEGA saindo pelos alto-falantes.
         with self._trava_voz:
             self._falando.set()
             self.ui.set_state("SPEAKING")
             try:
+                # Primeiro a ElevenLabs (natural); se não houver chave ou
+                # crédito, cai para a Maria do Windows — ficar mudo seria pior
+                # que soar robótico.
+                if not economico and self._falar_elevenlabs(texto):
+                    return
                 # pyttsx3 não é seguro entre threads: um motor por fala.
                 motor = self._init_voz()
                 motor.say(texto)
@@ -153,7 +222,7 @@ class FreeEngine:
 
         Sem isto o motor gratuito só conversava: o `tool_executor` chegava aqui
         e nunca era chamado, então um pedido como "pesquisa a Quimera" fazia o
-        ALPHA responder que tinha começado — sem nada ter acontecido. Mentir
+        OMEGA responder que tinha começado — sem nada ter acontecido. Mentir
         sobre execução é pior do que não ter a função.
         """
         contents: list[dict] = [{"role": "user", "parts": [{"text": texto}]}]
@@ -224,7 +293,7 @@ class FreeEngine:
             return
         dados = bytes(indata)
         # As palmas são ouvidas MESMO com o microfone mudo: é assim que o gesto
-        # continua servindo para chamar o ALPHA de volta sem que ele fique
+        # continua servindo para chamar o OMEGA de volta sem que ele fique
         # transcrevendo a conversa da sala o tempo todo.
         self._palmas.alimentar(dados)
         if not self.ui.muted:
@@ -244,7 +313,7 @@ class FreeEngine:
         rec.SetWords(False)
 
         self.ui.write_log(
-            "SYS: ALPHA ouvindo (modo gratuito). Comece a frase com 'Alpha'."
+            "SYS: OMEGA ouvindo (modo gratuito). Comece a frase com 'Omega'."
         )
         if not self.ui.muted:
             self.ui.set_state("LISTENING")
@@ -261,7 +330,7 @@ class FreeEngine:
             # Abrir o stream é o ÚNICO teste honesto: o ALSA anuncia um
             # dispositivo "default" mesmo numa máquina sem áudio, então
             # perguntar antes devolve "tem microfone" e mente.
-            # Sem microfone o ALPHA não fica inútil: o campo de comando já está
+            # Sem microfone o OMEGA não fica inútil: o campo de comando já está
             # ligado desde o __init__ e a janela continua servindo por texto.
             self.ui.write_log(
                 f"SYS: microfone indisponível ({str(e)[:60]}) — MODO DIGITADO. "
@@ -280,15 +349,61 @@ class FreeEngine:
                 frase = json.loads(rec.Result()).get("text", "").strip()
                 if not frase:
                     continue
-                self.ui.write_log(f"Você: {frase}")
+                # O modelo é de português comum: nome estrangeiro e jargão do
+                # canal saem deformados. Corrige antes de interpretar.
+                bruta = frase
+                frase = corrigir_vocabulario(frase)
+                if frase != bruta:
+                    self.ui.write_log(f"Você: {frase}   [ouvi: {bruta}]")
+                else:
+                    self.ui.write_log(f"Você: {frase}")
 
-                baixo = frase.lower()
-                gatilho = next((p for p in DESPERTAR if baixo.startswith(p)), None)
-                if gatilho is None:
-                    continue  # não era para o ALPHA
-                comando = frase[len(gatilho):].strip(" ,.")
-                if comando:
-                    self.processar_texto(comando)
+                comando = self._extrair_comando(frase)
+
+                if comando is None:
+                    # Não era para o OMEGA. Avisa DISCRETAMENTE no log em vez
+                    # de sumir: sem isso parece que o app está quebrado.
+                    self.ui.write_log("   (ignorado — comece com 'Omega')")
+                    continue
+
+                self._abrir_janela()
+                if not comando:
+                    self.falar("Pois não, senhor?")
+                    continue
+                self.processar_texto(comando)
+
+    # ---------- palavra de ativação ----------
+
+    def _abrir_janela(self) -> None:
+        self._janela_ate = time.monotonic() + JANELA_CONVERSA
+
+    def _extrair_comando(self, frase: str) -> str | None:
+        """Decide o que fazer com uma frase transcrita.
+
+        None  -> não era para o OMEGA (ignorar)
+        ""    -> chamaram só o nome (responder "pois não?")
+        texto -> o comando em si
+        """
+        palavras = frase.split()
+        if not palavras:
+            return None
+
+        # Já estamos conversando: não exige o nome de novo.
+        if time.monotonic() < getattr(self, "_janela_ate", 0.0):
+            return frase.strip(" ,.")
+
+        # O nome pode não ser a primeira palavra — o Vosk gruda ruído antes.
+        for i, palavra in enumerate(palavras[:MARGEM_DESPERTAR]):
+            limpa = palavra.lower().strip(",.!?;:")
+            # Semelhança em vez de igualdade: o modelo entrega "alta",
+            # "elfa", "auf" para a mesma palavra falada. Exigir a grafia
+            # exata fazia o OMEGA parecer surdo ao próprio nome.
+            if limpa in DESPERTAR or any(
+                SequenceMatcher(None, limpa, nome).ratio() >= 0.75
+                for nome in ("omega", "ômega")
+            ):
+                return " ".join(palavras[i + 1:]).strip(" ,.")
+        return None
 
     def stop(self) -> None:
         self._parar.set()
