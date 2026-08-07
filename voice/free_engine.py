@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import queue
 from difflib import SequenceMatcher
+import re
 import threading
 import time
 import unicodedata
@@ -51,7 +52,16 @@ MARGEM_DESPERTAR = 3
 # nome de novo — conversa em vez de interrogatório.
 JANELA_CONVERSA = 25.0
 
+# Ela reabre a cada resposta, contando do momento em que o OMEGA cala a
+# boca. Na prática: o nome só é preciso para começar; a partir daí a
+# conversa segue solta enquanto não houver 25 s de silêncio.
 
+
+
+# Palavras que interrompem uma leitura. Regex em vez de lista exata porque
+# durante a leitura o que chega pelo microfone vem misturado com o eco da
+# própria voz — basta a palavra aparecer.
+_E_PARADA = re.compile(r'\b(parar?|pare|chega|silencio|cale|cala)\b')
 
 def _sem_acento(texto: str) -> str:
     """O Whisper devolve acentuado ("Ômega"); a lista está sem acento."""
@@ -185,6 +195,14 @@ class FreeEngine:
                 )
             finally:
                 self._falando.clear()
+                # A janela de conversa conta a partir do SILÊNCIO, não do
+                # pedido. Abrindo-a só antes de responder, uma resposta de 30 s
+                # a consumia inteira e o nome voltava a ser obrigatório a cada
+                # frase — exatamente o interrogatório que ela existe para evitar.
+                from tools import leitura as _leitura
+
+                if not _leitura.lendo():
+                    self._abrir_janela()
                 if not self.ui.muted:
                     self.ui.set_state("LISTENING")
 
@@ -291,19 +309,38 @@ class FreeEngine:
     # ---------- ouvidos (Vosk) ----------
 
     def _ao_bater_palmas(self) -> None:
+        # Lendo? As palmas interrompem. É a saída física para calar uma
+        # leitura de 27 minutos sem depender do microfone entender "parar"
+        # por cima da própria voz saindo dos alto-falantes.
+        from tools import leitura as _leitura
+
+        if _leitura.lendo():
+            self.ui.write_log("SYS: duas palmas — " + _leitura.parar())
+            return
         self.ui.write_log("SYS: duas palmas — trazendo a janela para a frente.")
         self.ui.trazer_para_frente()
 
     def _callback(self, indata, frames, tempo, status):
-        if self._falando.is_set():
-            return
         dados = bytes(indata)
-        # As palmas são ouvidas MESMO com o microfone mudo: é assim que o gesto
-        # continua servindo para chamar o OMEGA de volta sem que ele fique
-        # transcrevendo a conversa da sala o tempo todo.
+        # As palmas são ouvidas SEMPRE — inclusive enquanto o OMEGA fala. O
+        # gesto é a saída física para interromper uma leitura longa, e antes
+        # ele morria aqui junto com o resto do áudio.
         self._palmas.alimentar(dados)
-        if not self.ui.muted:
-            self._fila.put(dados)
+
+        if self.ui.muted:
+            return
+
+        if self._falando.is_set():
+            # Durante uma LEITURA o microfone continua aberto: sem isso o
+            # "parar" nunca era ouvido, porque o OMEGA passava minutos
+            # falando de boca cheia e surdo. Fora da leitura seguimos surdos
+            # de propósito, senão ele transcreve a própria voz nos alto-falantes.
+            from tools import leitura as _leitura
+
+            if not _leitura.lendo():
+                return
+
+        self._fila.put(dados)
 
     def run(self) -> None:
         from tools import transcritor
@@ -372,6 +409,16 @@ class FreeEngine:
                     self.ui.write_log(f"Você: {frase}   [ouvi: {bruta}]")
                 else:
                     self.ui.write_log(f"Você: {frase}")
+
+                # Durante a leitura o microfone fica aberto só para poder
+                # parar. Tudo o mais é descartado: o que chega ali é, na
+                # maioria das vezes, o eco da própria voz nos alto-falantes.
+                from tools import leitura as _leitura
+
+                if _leitura.lendo():
+                    if _E_PARADA.search(_sem_acento(frase.lower())):
+                        self.ui.write_log(_leitura.parar())
+                    continue
 
                 comando = self._extrair_comando(frase)
 

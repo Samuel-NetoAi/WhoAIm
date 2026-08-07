@@ -66,9 +66,12 @@ AJUDA = """# Comandos (funcionam sem créditos)
 - **`roteiro <criatura>`** — exibe o roteiro de narração
 - **`cenas <criatura>`** — exibe as descrições de imagem *(= prompts)*
 - **`video <criatura>`** — toca o último vídeo renderizado
-- **`ler <criatura>`** — **lê a pesquisa em voz alta** (voz do Windows,
-  para não gastar créditos da ElevenLabs); vale também "me lê o roteiro de X"
-- **`parar`** — interrompe a leitura
+- **`ler <criatura>`** — **lê a pesquisa em voz alta** com a voz do Windows:
+  seca, mas grátis e sem limite; vale também "me lê o roteiro de X"
+- **`narrar <criatura>`** — o mesmo com a **voz boa** (ElevenLabs). Custa ~1
+  crédito por caractere de uma cota de 10 mil por mês, então em texto longo
+  ele diz o preço primeiro e espera **`confirmar`** *(= recitar)*
+- **`parar`** — interrompe a leitura (ou duas palmas)
 - **`imagem <descrição>`** — gera uma imagem pela OpenAI e exibe
   *(precisa de saldo na conta OpenAI)*
 - **`projetos`** — lista os projetos encontrados
@@ -126,8 +129,15 @@ def _pasta_da_criatura(creature: str) -> Path | None:
 # Verbos que revelam intenção de OUVIR, não de ver. Vêm antes da
 # palavra-chave na frase: "me lê a pesquisa da Medusa".
 _VERBOS_DE_LEITURA = {"ler", "leia", "le", "lê", "leiame", "narrar", "narre",
-                      "recitar", "recite", "ouvir", "escutar", "conta",
-                      "conte", "fala", "fale"}
+                      "narra", "recitar", "recite", "ouvir", "escutar", "conta",
+                      "conte", "fala", "fale", "interpretar", "interprete"}
+
+# Dentro da leitura há duas vozes, e a diferença é dinheiro. "Ler" usa a voz
+# do Windows: seca, mas grátis e ilimitada. "Narrar" usa a ElevenLabs: tem
+# emoção, e queima ~1 crédito por caractere de uma cota de 10 mil por mês.
+# Por isso o verbo escolhe — e não um padrão silencioso que gasta sem avisar.
+_VERBOS_DE_NARRACAO = {"narrar", "narre", "narra", "recitar", "recite",
+                       "interpretar", "interprete"}
 
 
 # Abaixo disto a semelhança vira coincidência e o comando errado dispara.
@@ -159,6 +169,11 @@ def _casar_verbo(palavra: str, aceitas: set[str]) -> str | None:
 
 def _quer_ouvir(raw: str) -> bool:
     return any(_casar_verbo(_norm(p), _VERBOS_DE_LEITURA) for p in raw.split())
+
+
+def _quer_narrar(raw: str) -> bool:
+    """True quando o pedido foi 'narrar' e não apenas 'ler' — voz cara."""
+    return any(_casar_verbo(_norm(p), _VERBOS_DE_NARRACAO) for p in raw.split())
 
 
 _VERBOS_DE_IMAGEM = {"imagem", "imagina", "desenha", "desenhar",
@@ -420,6 +435,9 @@ def handle(text: str, ui) -> str | None:
         return _leitura.parar()
 
     if low in ("confirmar", "confirma", "confirmado", "pode apagar", "sim apaga"):
+        narracao = _leitura.confirmar_narracao()
+        if narracao is not None:
+            return narracao
         return _apagar.confirmar()
     if low in ("cancelar", "cancela", "deixa", "esquece", "nao apaga", "não apaga"):
         return _apagar.cancelar()
@@ -451,7 +469,8 @@ def handle(text: str, ui) -> str | None:
             return resultado
         titulo, conteudo = resultado
         ui.show_document(titulo, conteudo)
-        return _leitura.ler(titulo, conteudo, ui)
+        return _leitura.ler(titulo, conteudo, ui,
+                            bonita=verbo in _VERBOS_DE_NARRACAO)
 
     if verbo in NOTE_ALIASES:
         nota = NOTE_ALIASES[verbo]
@@ -463,7 +482,7 @@ def handle(text: str, ui) -> str | None:
         # "ler a pesquisa da Medusa" exibe E lê; "pesquisa da Medusa" só
         # exibe. A intenção de ouvir vem do verbo dito antes da palavra-chave.
         if _quer_ouvir(raw):
-            return _leitura.ler(titulo, conteudo, ui)
+            return _leitura.ler(titulo, conteudo, ui, bonita=_quer_narrar(raw))
         return f"{titulo} na tela."
 
     if verbo in ("postar", "posta", "publicar", "publica", "subir", "sobe"):

@@ -21,9 +21,16 @@ import threading
 
 # Blocos curtos o bastante para "parar" responder rápido, longos o bastante
 # para a fala não soar picotada.
-MAX_BLOCO = 320
+# Blocos menores = 'parar' responde mais rápido (a checagem acontece entre
+# blocos, e cada bloco só termina quando a voz acaba de falar).
+MAX_BLOCO = 170
 
 _estado: dict = {"lendo": False, "parar": False, "titulo": ""}
+
+# Acima disto, narrar com a voz boa pede confirmação: a cota gratuita da
+# ElevenLabs é de 10 mil créditos por MÊS e ~1 crédito por caractere.
+LIMITE_SEM_PERGUNTAR = 1500
+_pendente: dict = {}
 
 
 def _limpar_markdown(texto: str) -> str:
@@ -66,6 +73,16 @@ def lendo() -> bool:
     return _estado["lendo"]
 
 
+def confirmar_narracao() -> str | None:
+    """Executa a narração cara que ficou aguardando. None = não havia nada."""
+    if not _pendente:
+        return None
+    dados = dict(_pendente)
+    _pendente.clear()
+    return ler(dados["titulo"], dados["conteudo"], dados["ui"],
+               bonita=True, ja_confirmado=True)
+
+
 def parar() -> str:
     if not _estado["lendo"]:
         return "Não estou lendo nada, senhor."
@@ -73,7 +90,8 @@ def parar() -> str:
     return "Interrompendo a leitura."
 
 
-def ler(titulo: str, conteudo: str, ui) -> str:
+def ler(titulo: str, conteudo: str, ui, bonita: bool = False,
+        ja_confirmado: bool = False) -> str:
     """Começa a ler em voz alta, numa thread própria.
 
     Devolve imediatamente a frase de confirmação — quem chama não pode ficar
@@ -89,6 +107,18 @@ def ler(titulo: str, conteudo: str, ui) -> str:
     if not blocos:
         return "Esse documento está vazio."
 
+    caracteres = sum(len(b) for b in blocos)
+    if bonita and not ja_confirmado and caracteres > LIMITE_SEM_PERGUNTAR:
+        # Custo à vista ANTES de gastar: é dinheiro do usuário, e a conta
+        # gratuita não aguenta um dossiê inteiro.
+        _pendente.update({"titulo": titulo, "conteudo": conteudo, "ui": ui})
+        return (
+            f"Narrar {titulo} com a voz boa custa cerca de {caracteres} créditos "
+            "da ElevenLabs, e a cota gratuita é de dez mil por mês. "
+            "Diga 'confirmar' para narrar assim mesmo, ou 'ler' para a voz "
+            "comum, que é ilimitada."
+        )
+
     _estado.update({"lendo": True, "parar": False, "titulo": titulo})
 
     def laco() -> None:
@@ -98,7 +128,7 @@ def ler(titulo: str, conteudo: str, ui) -> str:
                     ui.write_log(f"SYS: leitura interrompida em {i} de {len(blocos)}.")
                     return
                 # economico=True: voz do Windows. Ver o porquê no topo.
-                falar(bloco, economico=True)
+                falar(bloco, economico=not bonita)
             if not _estado["parar"]:
                 ui.write_log(f"SYS: terminei de ler {titulo}.")
         finally:
