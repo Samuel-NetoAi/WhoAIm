@@ -1,6 +1,6 @@
 """Motor de voz GRATUITO do OMEGA — funciona sem gastar um centavo.
 
-Cadeia: ouvidos = Vosk (offline, modelo pt-BR em models/pt-br),
+Cadeia: ouvidos = Whisper local na GPU (tools/transcritor.py),
 cérebro = Gemini (chave do Samuel, camada gratuita) apenas quando o texto
 não é um comando local, voz = SAPI do Windows (Maria pt-BR, offline).
 
@@ -17,6 +17,7 @@ import queue
 from difflib import SequenceMatcher
 import threading
 import time
+import unicodedata
 from pathlib import Path
 
 import requests
@@ -35,14 +36,11 @@ GEMINI_URL = (
     "gemini-flash-latest:generateContent"
 )
 
-# Palavra de ativação: sem ela, o Vosk transcreveria conversa aleatória do
-# ambiente e o OMEGA responderia sozinho o tempo todo. O Vosk erra o nome
-# com frequência (é palavra estrangeira), então aceitamos as variantes que
-# ele realmente produz.
-# "Ômega" é palavra portuguesa comum — o modelo pt-BR a reconhece muito
-# melhor que "Alpha" (estrangeira). Ainda assim listamos as variantes que
-# o Vosk costuma produzir.
-DESPERTAR = ("omega", "ômega", "o mega", "omegas", "amega", "omeca")
+# Palavra de ativação: sem ela, qualquer conversa no ambiente viraria
+# comando. As variantes abaixo são as que os transcritores REALMENTE
+# produzem para "Ômega" — observadas no log, não imaginadas.
+DESPERTAR = ("omega", "o mega", "omegas", "amega", "omeca",
+             "omida", "omeda", "omena", "nega", "amiga", "omeya")
 
 # Quantas palavras iniciais podem vir antes do nome. O Vosk costuma grudar
 # um "é", "ó" ou ruído no começo da frase; exigir que o nome seja a PRIMEIRA
@@ -53,6 +51,14 @@ MARGEM_DESPERTAR = 3
 # nome de novo — conversa em vez de interrogatório.
 JANELA_CONVERSA = 25.0
 
+
+
+def _sem_acento(texto: str) -> str:
+    """O Whisper devolve acentuado ("Ômega"); a lista está sem acento."""
+    return "".join(
+        c for c in unicodedata.normalize("NFD", texto)
+        if unicodedata.category(c) != "Mn"
+    )
 
 class FreeEngine:
     def __init__(
@@ -300,20 +306,18 @@ class FreeEngine:
             self._fila.put(dados)
 
     def run(self) -> None:
-        if not MODELO_PT.exists():
-            self.ui.write_log("ERR: modelo de voz não encontrado em models/pt-br")
+        from tools import transcritor
+
+        self.ui.write_log("SYS: carregando reconhecimento de fala (Whisper)...")
+        try:
+            _modelo, dispositivo = transcritor.carregar()
+        except Exception as e:  # noqa: BLE001
+            self.ui.write_log(f"ERR: não consegui carregar o Whisper: {str(e)[:70]}")
             return
-
-        from vosk import KaldiRecognizer, Model, SetLogLevel
-
-        SetLogLevel(-1)
-        self.ui.write_log("SYS: carregando modelo de voz (offline)...")
-        modelo = Model(str(MODELO_PT))
-        rec = KaldiRecognizer(modelo, TAXA)
-        rec.SetWords(False)
+        detector = transcritor.DetectorDeFala(TAXA)
 
         self.ui.write_log(
-            "SYS: OMEGA ouvindo (modo gratuito). Comece a frase com 'Omega'."
+            f"SYS: OMEGA ouvindo ({dispositivo.upper()}). Comece a frase com 'Omega'."
         )
         if not self.ui.muted:
             self.ui.set_state("LISTENING")
@@ -344,9 +348,20 @@ class FreeEngine:
                     dados = self._fila.get(timeout=0.5)
                 except queue.Empty:
                     continue
-                if not rec.AcceptWaveform(dados):
+                # O Whisper transcreve a frase INTEIRA, não pedaço a pedaço
+                # como o Vosk: o detector acumula até o silêncio fechar.
+                trecho = detector.alimentar(dados)
+                if trecho is None:
                     continue
-                frase = json.loads(rec.Result()).get("text", "").strip()
+                self.ui.set_state("THINKING")
+                try:
+                    frase = transcritor.transcrever(trecho).strip()
+                except Exception as e:  # noqa: BLE001
+                    self.ui.write_log(f"ERR: transcrição falhou ({str(e)[:50]})")
+                    continue
+                finally:
+                    if not self.ui.muted and not self._falando.is_set():
+                        self.ui.set_state("LISTENING")
                 if not frase:
                     continue
                 # O modelo é de português comum: nome estrangeiro e jargão do
@@ -394,7 +409,7 @@ class FreeEngine:
 
         # O nome pode não ser a primeira palavra — o Vosk gruda ruído antes.
         for i, palavra in enumerate(palavras[:MARGEM_DESPERTAR]):
-            limpa = palavra.lower().strip(",.!?;:")
+            limpa = _sem_acento(palavra.lower().strip(",.!?;:¿¡"))
             # Semelhança em vez de igualdade: o modelo entrega "alta",
             # "elfa", "auf" para a mesma palavra falada. Exigir a grafia
             # exata fazia o OMEGA parecer surdo ao próprio nome.

@@ -5,6 +5,10 @@ PyQt6-WebEngine
 pillow
 psutil
 requests
-vosk
+# vosk — substituído pelo Whisper (faster-whisper), muito mais preciso em pt-BR
+faster-whisper
+numpy
+nvidia-cublas-cu12
+nvidia-cudnn-cu12
 pyttsx3
 playwright

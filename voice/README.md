@@ -192,3 +192,23 @@ resultado dela volta ao modelo.
 - `clap.py` — detector de palmas sobre o fluxo de áudio existente
 - `ui.py` — HUD PyQt6 do Mark + `ViewerPanel` (documentos e vídeo no centro)
 - `config/api_keys.json` — chave OpenAI (local, não versionar)
+
+## Reconhecimento de fala (Whisper)
+
+O Vosk foi substituído: mesmo com o modelo grande ele errava demais em
+português — "Ômega" virava "amiga", "IT A Coisa" virava "e tinha coice",
+"e a colonizar", "doente". Nenhuma camada de correção conserta isso.
+
+Hoje usa **faster-whisper** local, `small`, na GPU (RTX 3050): ~0,05 s por
+frase contra ~1,6 s na CPU. Cai para CPU sozinho se a GPU não estiver
+disponível.
+
+- As DLLs de CUDA vêm dos pacotes pip `nvidia-cublas-cu12` / `nvidia-cudnn-cu12`
+  e **precisam entrar no PATH antes** do ctranslate2 carregar — é o que
+  `tools/transcritor.py::_preparar_cuda` faz. Sem isso: `cublas64_12.dll not found`.
+- O Whisper é por trecho, não contínuo: `DetectorDeFala` acumula áudio
+  enquanto há voz e transcreve quando o silêncio fecha a frase.
+- Ajustes finos em `tools/transcritor.py`: `LIMIAR_VOZ` (sobe se disparar
+  com ruído), `SILENCIO_FIM` (sobe se cortar no meio da frase).
+
+O modelo Vosk continua em `models/pt-br` como reserva, mas não é mais usado.

@@ -11,7 +11,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(BASE_DIR))
 
-from free_engine import MODELO_PT, FreeEngine  # noqa: E402
+from free_engine import FreeEngine  # noqa: E402
 
 
 class UIFalsa:
@@ -42,20 +42,17 @@ def main() -> int:
         ui=ui,
     )
 
-    print("[1] modelo de voz (Vosk pt-BR)")
-    if MODELO_PT.exists():
-        try:
-            from vosk import Model, SetLogLevel
+    print("[1] reconhecimento de fala (Whisper local)")
+    try:
+        from tools import transcritor
 
-            SetLogLevel(-1)
-            Model(str(MODELO_PT))
-            print("    OK — modelo carrega")
-        except Exception as e:  # noqa: BLE001
-            falhas.append(f"Vosk: {e}")
-            print(f"    FALHA: {e}")
-    else:
-        falhas.append("modelo pt-br ausente")
-        print("    FALHA: models/pt-br não existe")
+        _m, dispositivo = transcritor.carregar()
+        print(f"    OK — modelo carregado no {dispositivo.upper()}")
+        if dispositivo == "cpu":
+            print("    (aviso: sem GPU a transcrição fica ~30x mais lenta)")
+    except Exception as e:  # noqa: BLE001
+        falhas.append(f"Whisper: {e}")
+        print(f"    FALHA: {e}")
 
     print("[2] cérebro (Gemini)")
     resposta = motor._perguntar_gemini("Diga apenas: sistemas operacionais.")
