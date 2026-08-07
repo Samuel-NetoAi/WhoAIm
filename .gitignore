@@ -47,3 +47,7 @@ Thumbs.db
 
 # Imagens geradas pela OpenAI — artefato reproduzível, não código.
 voice/imagens/
+
+# Perfil do navegador do OMEGA — contem SESSOES DE LOGIN. Nunca versionar.
+voice/navegador-perfil/
+voice/nao-entendidas.txt

@@ -12,6 +12,7 @@ texto, e aí quem chama repassa para o modelo de voz.
 from __future__ import annotations
 
 import re
+from difflib import SequenceMatcher
 import unicodedata
 from pathlib import Path
 
@@ -24,6 +25,7 @@ from .pipeline import AI_PROJECT_ROOT, pipeline_criatura
 from . import apagar as _apagar
 from . import leitura as _leitura
 from . import imagens as _imagens
+from . import navegador as _navegador
 from .projetos import frase_de_ajuda as _ajuda_projeto
 from .projetos import resolver as _resolver_projeto
 
@@ -84,6 +86,13 @@ AJUDA = """# Comandos (funcionam sem créditos)
 - **`produzir <criatura>`** — roteiro e cenas (fases 1–2)
 - **`andamento`** — como vai a pesquisa em curso *(= pipeline)*
 
+**Redes sociais** (YouTube, Instagram, TikTok, X)
+- **`login <rede>`** — abre a rede para **você** entrar. O OMEGA nunca digita
+  nem guarda senha; depois do seu login a sessão fica salva no perfil dele
+- **`postar <criatura> no <rede>`** — abre o formulário com o vídeo já
+  anexado e **para ali**. Quem aperta publicar é você — publicação é
+  irreversível e um comando mal transcrito não pode subir vídeo sozinho
+
 **Apagar** (sempre em dois passos, e vai para a lixeira)
 - **`apagar projeto <criatura>`** → depois **`confirmar`** ou **`cancelar`**
 
@@ -121,8 +130,35 @@ _VERBOS_DE_LEITURA = {"ler", "leia", "le", "lê", "leiame", "narrar", "narre",
                       "conte", "fala", "fale"}
 
 
+# Abaixo disto a semelhança vira coincidência e o comando errado dispara.
+_LIMIAR_VERBO = 0.82
+# Palavra curta colide fácil ("ler" x "ver", "cena" x "cara"): exige exata.
+_MINIMO_PARA_APROXIMAR = 5
+
+
+def _casar_verbo(palavra: str, aceitas: set[str]) -> str | None:
+    """Casa a palavra falada com um verbo de comando, tolerando erro.
+
+    O transcritor entrega "pesquiza", "montá", "analizar". Listar todas as
+    grafias erradas é enxugar gelo; comparar por semelhança cobre as que
+    ninguém previu — que são a maioria.
+    """
+    if palavra in aceitas:
+        return palavra
+    if len(palavra) < _MINIMO_PARA_APROXIMAR:
+        return None
+    melhor, nota_melhor = None, 0.0
+    for candidato in aceitas:
+        if len(candidato) < _MINIMO_PARA_APROXIMAR:
+            continue
+        nota = SequenceMatcher(None, palavra, candidato).ratio()
+        if nota > nota_melhor:
+            melhor, nota_melhor = candidato, nota
+    return melhor if nota_melhor >= _LIMIAR_VERBO else None
+
+
 def _quer_ouvir(raw: str) -> bool:
-    return any(_norm(p) in _VERBOS_DE_LEITURA for p in raw.split())
+    return any(_casar_verbo(_norm(p), _VERBOS_DE_LEITURA) for p in raw.split())
 
 
 _VERBOS_DE_IMAGEM = {"imagem", "imagina", "desenha", "desenhar",
@@ -140,7 +176,9 @@ _VERBOS_COM_ALVO = (
        "corte", "corta", "resumo", "short", "abrir", "abre",
        "apagar", "apaga", "deletar", "deleta", "remover", "remove",
        "pesquisar", "pesquise", "investigar", "investigue",
-       "produzir", "produza", "roteirizar", "roteirize"}
+       "produzir", "produza", "roteirizar", "roteirize",
+       "postar", "posta", "publicar", "publica", "subir", "sobe",
+       "login", "entrar", "logar"}
 )
 
 # Preposições, artigos e substantivos genéricos que sobram grudados no alvo
@@ -148,6 +186,20 @@ _VERBOS_COM_ALVO = (
 _LIXO_INICIAL = {"o", "a", "os", "as", "do", "da", "dos", "das", "de", "no",
                  "na", "em", "sobre", "para", "pra", "meu", "minha",
                  "video", "vídeo", "projeto", "arquivo", "pasta"}
+
+
+
+# Frases que o OMEGA não entendeu, guardadas para o vocabulário crescer com
+# base no que o Samuel REALMENTE diz — e não no que imaginamos que ele diria.
+NAO_ENTENDIDAS = Path(__file__).resolve().parent.parent / "nao-entendidas.txt"
+
+
+def _anotar_incompreensao(texto: str) -> None:
+    try:
+        with NAO_ENTENDIDAS.open("a", encoding="utf-8") as f:
+            f.write(texto.strip() + "\n")
+    except OSError:
+        pass  # registrar é conveniência; nunca pode derrubar um comando
 
 
 def _extrair_verbo_e_alvo(raw: str) -> tuple[str, str] | None:
@@ -161,8 +213,8 @@ def _extrair_verbo_e_alvo(raw: str) -> tuple[str, str] | None:
 
     def varrer(aceitas: set[str]) -> tuple[str, str] | None:
         for i, palavra in enumerate(palavras):
-            verbo = _norm(palavra)
-            if verbo not in aceitas:
+            verbo = _casar_verbo(_norm(palavra), aceitas)
+            if verbo is None:
                 continue
             resto = palavras[i + 1:]
             # Tira artigos/preposições do começo do alvo, senão "do it a
@@ -178,6 +230,32 @@ def _extrair_verbo_e_alvo(raw: str) -> tuple[str, str] | None:
     # de ver a pesquisa, não de abrir o navegador). Sem esta prioridade o
     # verbo genérico, por vir antes na frase, sequestrava o comando.
     return varrer(set(NOTE_ALIASES)) or varrer(_VERBOS_COM_ALVO)
+
+
+
+def _postar(pedido: str) -> str:
+    """"postar a Medusa no youtube" -> leva o render até o formulário.
+
+    O OMEGA para no formulário de propósito: publicar é irreversível e um
+    comando de voz mal transcrito não pode subir vídeo no canal sozinho.
+    """
+    baixo = _norm(pedido)
+    rede = next((r for r in ("youtube", "instagram", "tiktok", "twitter", "x")
+                 if r in baixo), None)
+    if rede is None:
+        return ("Em qual rede, senhor? YouTube, Instagram, TikTok ou X. "
+                "Diga por exemplo: postar a Medusa no YouTube.")
+    # O que sobra depois de tirar a rede e as preposições é o nome do projeto.
+    criatura = baixo
+    for termo in (rede, "no", "na", "em", "para", "pro"):
+        criatura = re.sub(rf"{re.escape(termo)}", " ", criatura)
+    criatura = " ".join(criatura.split())
+
+    caminho = _latest_render(criatura) if criatura else None
+    if caminho is None:
+        return (f"Não achei vídeo renderizado para {criatura or 'esse projeto'}. "
+                "Monte o vídeo antes de postar.")
+    return _navegador.preparar_postagem(rede, str(caminho))
 
 
 def _read_note(creature: str, note: str) -> tuple[str, str] | str:
@@ -360,6 +438,9 @@ def handle(text: str, ui) -> str | None:
     # no Gemini (que vive estourando a cota gratuita).
     achado = _extrair_verbo_e_alvo(raw)
     if achado is None:
+        # Nenhuma palavra-chave: registra para o vocabulário crescer com base
+        # no que ele REALMENTE diz, e devolve None (quem chama manda ao modelo).
+        _anotar_incompreensao(raw)
         return None
     verbo, alvo = achado
 
@@ -384,6 +465,12 @@ def handle(text: str, ui) -> str | None:
         if _quer_ouvir(raw):
             return _leitura.ler(titulo, conteudo, ui)
         return f"{titulo} na tela."
+
+    if verbo in ("postar", "posta", "publicar", "publica", "subir", "sobe"):
+        return _postar(alvo)
+
+    if verbo in ("login", "entrar", "logar"):
+        return _navegador.login(alvo)
 
     if verbo in _VERBOS_DE_IMAGEM:
         # "imagem da Medusa em pedra" -> gera e exibe. Se o texto
@@ -427,4 +514,7 @@ def handle(text: str, ui) -> str | None:
             {"action": "start", "creature": alvo, "phase": "producao"}
         )
 
+    # Não é comando conhecido: registra para podermos ampliar o
+    # vocabulário depois, e devolve None (quem chama manda ao modelo).
+    _anotar_incompreensao(raw)
     return None
