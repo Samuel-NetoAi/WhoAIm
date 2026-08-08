@@ -282,11 +282,25 @@ def openai_tem_saldo(key: str) -> bool:
 
 
 def escolher_motor(cfg: dict) -> str:
-    """'realtime' (OpenAI, melhor) ou 'free' (Vosk+Gemini+SAPI, custo zero).
-    O padrão 'auto' testa o saldo da OpenAI e cai para o gratuito sozinho."""
+    """Qual motor de voz usar.
+
+    'live'     — Gemini Live: o senhor fala e ele ouve o ÁUDIO, sem
+                 transcrição no meio. É o mais natural e é gratuito, mas a
+                 cota da camada gratuita estoura com frequência.
+    'realtime' — OpenAI Realtime: equivalente, porém pago (a conta está sem
+                 saldo hoje).
+    'free'     — Whisper local + Gemini texto + voz do Windows. Menos fluido,
+                 mas funciona offline e não depende de cota nenhuma.
+
+    O padrão 'auto' tenta o Live primeiro e cai para o local sozinho. A queda
+    não é hipótese: a mesma cota que dá 429 no dia a dia derruba a sessão de
+    voz, e sem o local por baixo o OMEGA ficaria mudo quando isso acontecer.
+    """
     modo = (cfg.get("engine") or "auto").strip().lower()
-    if modo in ("free", "realtime"):
+    if modo in ("free", "realtime", "live"):
         return modo
+    if cfg.get("gemini_api_key"):
+        return "live"
     return "realtime" if openai_tem_saldo(cfg.get("openai_api_key", "")) else "free"
 
 
@@ -297,6 +311,33 @@ def main() -> None:
     def runner():
         ui.wait_for_api_key()
         motor = escolher_motor(cfg)
+
+        if motor == "live":
+            from live_engine import LiveEngine
+
+            ui.write_log("SYS: voz em tempo real (Gemini Live) — abrindo...")
+            engine = LiveEngine(
+                gemini_key=cfg.get("gemini_api_key", ""),
+                instructions=INSTRUCTIONS,
+                tool_executor=make_tool_executor(ui),
+                ui=ui,
+                local_handler=handle_local_command,
+                tools=TOOLS,
+            )
+            ligar_avisos(ui, engine)
+            try:
+                if engine.run():
+                    return
+            except KeyboardInterrupt:
+                print("\nEncerrando...")
+                return
+            # Caiu. Em vez de morrer, continua no motor local — e diz por quê,
+            # senão a troca de voz no meio do dia parece defeito.
+            ui.write_log(
+                f"SYS: {engine.motivo_da_queda or 'a voz em tempo real não abriu'}"
+                " — seguindo pelo motor local (Whisper + Gemini + voz do Windows)."
+            )
+            motor = "free"
 
         if motor == "free":
             ui.write_log("SYS: motor GRATUITO (Vosk + Gemini + voz do Windows).")
