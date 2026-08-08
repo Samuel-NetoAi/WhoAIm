@@ -42,6 +42,7 @@ def motor(local=None):
     m.tools = []
     m._historico = []
     m._ultima_fala = 0.0
+    m._gemini_ate = 0.0
     m._voz_indisponivel = True
     m.enviados = []
 

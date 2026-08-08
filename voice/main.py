@@ -548,10 +548,21 @@ def main() -> None:
                 return
             # Caiu. Em vez de morrer, continua no motor local — e diz por quê,
             # senão a troca de voz no meio do dia parece defeito.
-            ui.write_log(
-                f"SYS: {engine.motivo_da_queda or 'a voz em tempo real não abriu'}"
-                " — seguindo pelo motor local (Whisper + Gemini + voz do Windows)."
-            )
+            motivo = engine.motivo_da_queda or "a voz em tempo real não abriu"
+            # Dizer "seguindo pelo motor local (Whisper + Gemini + ...)" quando
+            # o que acabou foi justamente a cota do GEMINI é enganoso: o motor
+            # local usa o mesmo cérebro. Só os comandos locais sobrevivem.
+            if "cota" in motivo.lower():
+                ui.write_log(
+                    "SYS: a cota gratuita do Gemini acabou — a voz em tempo "
+                    "real cai. Os COMANDOS continuam funcionando (pesquisa, "
+                    "roteiro, montar, aula, tendências); só a conversa livre "
+                    "fica esperando a cota voltar, o que costuma levar alguns "
+                    "minutos.")
+            else:
+                ui.write_log(
+                    f"SYS: {motivo} — seguindo pelo motor local "
+                    "(Whisper + Gemini + voz do Windows).")
             motor = "free"
 
         if motor == "free":

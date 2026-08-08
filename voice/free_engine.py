@@ -53,6 +53,11 @@ MAX_TURNOS_MEMORIA = 8
 # dito de manhã responderia a uma pergunta feita na véspera.
 MEMORIA_EXPIRA = 900.0
 
+# Depois de um 429, quanto tempo esperar antes de tentar o Gemini de novo.
+# Sem isto ele repetia a frase inteira "a cota gratuita estourou..." a CADA
+# fala, gastando tempo numa requisição condenada e enchendo a tela.
+DESCANSO_APOS_COTA = 300.0
+
 # Ela reabre a cada resposta, contando do momento em que o OMEGA cala a
 # boca. Na prática: o nome só é preciso para começar; a partir daí a
 # conversa segue solta enquanto não houver 25 s de silêncio.
@@ -119,6 +124,7 @@ class FreeEngine:
         # falha de escuta, mas porque ele não tinha como saber quem era "ela".
         self._historico: list[dict] = []
         self._ultima_fala = 0.0
+        self._gemini_ate = 0.0   # quando a cota estourou, espera até aqui
 
         self.ui.on_text_command = self.processar_texto
         # Ctrl+Espaço: a saída para quando o nome não é reconhecido. Não
@@ -276,8 +282,10 @@ class FreeEngine:
         except requests.RequestException:
             raise RuntimeError("Estou sem conexão com o Gemini agora.") from None
         if r.status_code == 429:
-            raise RuntimeError("A cota gratuita do Gemini estourou. "
-                               "Os comandos locais continuam funcionando.")
+            self._gemini_ate = time.monotonic() + DESCANSO_APOS_COTA
+            raise RuntimeError(
+                "A cota gratuita do Gemini estourou. Os comandos continuam "
+                "funcionando; volto a conversar em uns minutos.")
         if not r.ok:
             raise RuntimeError(f"O Gemini recusou: {r.status_code}.")
         try:
@@ -293,6 +301,13 @@ class FreeEngine:
         OMEGA responder que tinha começado — sem nada ter acontecido. Mentir
         sobre execução é pior do que não ter a função.
         """
+        # Enquanto a cota está de castigo, nem tenta: a requisição falharia
+        # de qualquer jeito, e a resposta longa repetida a cada frase é pior
+        # que o silêncio.
+        if time.monotonic() < self._gemini_ate:
+            faltam = int((self._gemini_ate - time.monotonic()) / 60) + 1
+            return f"Ainda sem cota do Gemini — tente em uns {faltam} minuto(s)."
+
         # O histórico vem ANTES da pergunta: é o que permite "e o roteiro
         # dela?" logo depois de "me mostra a pesquisa da Medusa".
         if time.monotonic() - self._ultima_fala > MEMORIA_EXPIRA:

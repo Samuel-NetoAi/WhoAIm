@@ -57,6 +57,18 @@ BLOCO = 1600            # 100 ms — pedaço pequeno o bastante para barge-in
 # acabado, e insistir só faz o OMEGA ficar mudo mais tempo.
 MAX_FALHAS = 3
 
+# Como a Live API diz "acabou a cota". Ela NÃO manda 429 pelo WebSocket: manda
+# o código de fechamento 1008 ("policy violation") com "operation was aborted"
+# — e eu só procurava por "429". Resultado no uso real: três tentativas
+# inúteis, uma atrás da outra, com o Samuel olhando erro em inglês na tela.
+_SINAIS_DE_COTA = ("1008", "429", "resource_exhausted", "quota",
+                   "policy violation", "operation was aborted")
+
+
+def _e_falta_de_cota(razao: str) -> bool:
+    baixo = (razao or "").lower()
+    return any(s in baixo for s in _SINAIS_DE_COTA)
+
 # Quanto tempo a conversa segue aberta depois da última interação. Mais longo
 # que os 25 s do motor local porque aqui a conversa é fluida de verdade — e o
 # relógio conta a partir do fim da fala DELE, não do pedido.
@@ -550,15 +562,16 @@ class LiveEngine:
                     falhas = 0
                 except Exception as e:  # noqa: BLE001
                     falhas += 1
-                    razao = str(e)[:120]
-                    self.motivo_da_queda = razao
-                    self.ui.write_log(
-                        f"SYS: a voz em tempo real caiu ({razao}) — "
-                        f"tentativa {falhas} de {MAX_FALHAS}.")
-                    # Cota estourada não se resolve tentando de novo.
-                    if "429" in razao or "RESOURCE_EXHAUSTED" in razao.upper():
+                    razao = str(e)[:160]
+                    # Cota estourada não se resolve tentando de novo — e
+                    # insistir três vezes só enche a tela de erro em inglês.
+                    if _e_falta_de_cota(razao):
                         self.motivo_da_queda = "a cota gratuita do Gemini acabou"
                         break
+                    self.motivo_da_queda = razao
+                    self.ui.write_log(
+                        f"SYS: a voz em tempo real caiu — tentativa {falhas} "
+                        f"de {MAX_FALHAS}. ({razao[:70]})")
                     time.sleep(2 * falhas)
                 finally:
                     self._ws = None
