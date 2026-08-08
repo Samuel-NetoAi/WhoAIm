@@ -105,6 +105,8 @@ AJUDA = """# Comandos (funcionam sem créditos)
 - **`postar <criatura> no <rede>`** — abre o formulário com o vídeo já
   anexado e **para ali**. Quem aperta publicar é você — publicação é
   irreversível e um comando mal transcrito não pode subir vídeo sozinho
+- **`ver navegador`** — print da tela do navegador aqui dentro, para você
+  acompanhar sem procurar a janela do Chrome
 
 **Apagar** (sempre em dois passos, e vai para a lixeira)
 - **`apagar projeto <criatura>`** → depois **`confirmar`** ou **`cancelar`**
@@ -258,7 +260,7 @@ def _extrair_verbo_e_alvo(raw: str) -> tuple[str, str] | None:
 
 
 
-def _postar(pedido: str) -> str:
+def _postar(pedido: str, ui) -> str:
     """"postar a Medusa no youtube" -> leva o render até o formulário.
 
     O OMEGA para no formulário de propósito: publicar é irreversível e um
@@ -280,7 +282,7 @@ def _postar(pedido: str) -> str:
     if caminho is None:
         return (f"Não achei vídeo renderizado para {criatura or 'esse projeto'}. "
                 "Monte o vídeo antes de postar.")
-    return _navegador.preparar_postagem(rede, str(caminho))
+    return _navegador.preparar_postagem(rede, str(caminho), ui=ui)
 
 
 def _read_note(creature: str, note: str) -> tuple[str, str] | str:
@@ -444,6 +446,12 @@ def handle(text: str, ui) -> str | None:
     if low in ("parar", "para", "chega", "silencio", "silêncio", "cala"):
         return _leitura.parar()
 
+    # "O que você está vendo?" — pedido do Samuel para acompanhar a postagem
+    # sem ter que caçar a janela do Chrome no meio das outras.
+    if low in ("ver navegador", "mostra o navegador", "o que voce esta vendo",
+               "o que você está vendo", "tela do navegador", "navegador"):
+        return _navegador.ver(ui)
+
     # Como ele está te entendendo, e o que ainda falta ensinar. É a saída do
     # diário de aprendizado — a resposta prática ao "como se treina isso".
     if low in ("revisar", "revisa", "revisao", "revisão", "como me entende",
@@ -530,7 +538,7 @@ def handle(text: str, ui) -> str | None:
         return f"{titulo} na tela."
 
     if verbo in ("postar", "posta", "publicar", "publica", "subir", "sobe"):
-        return _postar(alvo)
+        return _postar(alvo, ui)
 
     if verbo in ("login", "entrar", "logar"):
         return _navegador.login(alvo)

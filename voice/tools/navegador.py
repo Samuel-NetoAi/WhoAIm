@@ -22,6 +22,8 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 PERFIL = BASE_DIR / "navegador-perfil"
+# Os prints ficam fora do git: mostram a tela logada do Samuel.
+PRINTS = BASE_DIR / "_prints"
 
 REDES = {
     "youtube": ("YouTube", "https://studio.youtube.com/"),
@@ -33,11 +35,48 @@ REDES = {
 
 # Onde cada rede começa o envio. Só abrimos a página certa; o resto é do
 # usuário, por decisão de segurança (ver regra 2 no topo).
+#
+# O YouTube usa `youtube.com/upload`, e não a URL do Studio: ela redireciona
+# para `.../channel/UC/content?d=ud` — o `UC` é resolvido pelo próprio
+# YouTube para o canal de quem está logado, e o `?d=ud` já abre a caixa de
+# envio. Verificado seguindo os redirecionamentos.
 ENVIO = {
-    "youtube": "https://studio.youtube.com/channel/UC/videos/upload",
+    "youtube": "https://www.youtube.com/upload",
     "instagram": "https://www.instagram.com/",
     "tiktok": "https://www.tiktok.com/tiktokstudio/upload",
     "x": "https://x.com/compose/post",
+}
+
+# Como chegar até o campo de arquivo em cada rede, em ordem de tentativa.
+# Um `input[type=file]` só existe depois de a página montar o formulário, e
+# no Instagram ele nem existe até clicar em "Criar". Antes disto o código
+# tinha um laço sobre UMA tupla de um seletor só — que parecia robustez e
+# não era.
+#
+# Isto vai quebrar quando as redes mudarem o layout: é a natureza de
+# automação de navegador. O que dá para garantir é que a quebra seja DITA,
+# com o print na tela, em vez de virar um "não achei onde anexar" mudo.
+CAMINHO_ATE_O_ARQUIVO: dict[str, tuple[tuple[str, ...], ...]] = {
+    # (botões a clicar antes, ...) — cada tupla é uma tentativa independente
+    "youtube": (
+        (),                                    # o ?d=ud já abre a caixa
+        ("button:has-text('Selecionar arquivos')",),
+        ("#select-files-button",),
+    ),
+    "instagram": (
+        ("svg[aria-label='Nova publicação']",),
+        ("svg[aria-label='New post']",),
+        ("a:has-text('Criar')", "span:has-text('Publicação')"),
+    ),
+    "tiktok": (
+        (),
+        ("button:has-text('Selecionar vídeo')",),
+        ("button:has-text('Select video')",),
+    ),
+    "x": (
+        (),
+        ("input[data-testid='fileInput']",),
+    ),
 }
 
 _estado: dict = {"playwright": None, "contexto": None}
@@ -145,7 +184,8 @@ def login(nome_rede: str) -> str:
     )
 
 
-def preparar_postagem(rede: str, caminho_video: str, titulo: str = "") -> str:
+def preparar_postagem(rede: str, caminho_video: str, titulo: str = "",
+                      ui=None) -> str:
     """Leva o vídeo até a tela de envio e PARA, para o Samuel revisar.
 
     Deliberadamente não clica em publicar: ver a regra 2 no topo do arquivo.
@@ -164,19 +204,14 @@ def preparar_postagem(rede: str, caminho_video: str, titulo: str = "") -> str:
     try:
         with _trava:
             pagina = _ir_para(ENVIO.get(chave, REDES[chave][1]))
-            # O seletor de arquivo varia por rede e muda com frequência;
-            # tentamos o padrão e, se não houver, o usuário arrasta o vídeo.
-            anexado = False
-            for seletor in ("input[type=file]",):
-                try:
-                    campo = pagina.wait_for_selector(
-                        seletor, timeout=8000, state="attached"
-                    )
-                    campo.set_input_files(str(video))
-                    anexado = True
-                    break
-                except Exception:  # noqa: BLE001 — seletor ausente é esperado
-                    continue
+            if _parece_tela_de_login(pagina):
+                _mostrar(ui, pagina, f"{rotulo} — precisa de login")
+                return (
+                    f"O {rotulo} está pedindo login. Entre você mesmo na janela "
+                    "que abri — eu não uso senha. Depois peça de novo."
+                )
+            anexado, onde_parou = _anexar(pagina, chave, video)
+            _mostrar(ui, pagina, f"{rotulo} — {'anexado' if anexado else 'parei aqui'}")
     except Exception as e:  # noqa: BLE001
         return f"Falhou ao preparar no {rotulo}: {str(e)[:90]}"
 
@@ -186,11 +221,87 @@ def preparar_postagem(rede: str, caminho_video: str, titulo: str = "") -> str:
             + (f' e o título "{titulo}"' if titulo else "")
             + ". Revise e publique você — eu não aperto o botão de publicar."
         )
+    # Dizer ONDE parou, e não só que não deu: é a diferença entre o Samuel
+    # arrastar o arquivo em dez segundos e ele achar que o OMEGA quebrou.
     return (
-        f"{rotulo} aberto na tela de envio, mas não achei onde anexar "
-        f"automaticamente. Arraste o {video.name} para a janela. "
-        "Ele está em renders, no projeto."
+        f"{rotulo} aberto, mas não cheguei ao campo de arquivo ({onde_parou}). "
+        f"Arraste o {video.name} para a janela — está na pasta renders do "
+        "projeto. Coloquei um print na tela para você ver onde parei."
     )
+
+
+def _parece_tela_de_login(pagina) -> bool:
+    """Detecta a parede de login antes de tentar anexar.
+
+    Sem isto o OMEGA tentava anexar num formulário que não existe e
+    respondia "não achei onde anexar" — verdade, mas inútil: o problema era
+    outro, e a ação a tomar também.
+    """
+    try:
+        url = (pagina.url or "").lower()
+    except Exception:  # noqa: BLE001
+        return False
+    return any(m in url for m in (
+        "accounts.google.com", "/login", "signin", "sign_in", "/auth"))
+
+
+def _anexar(pagina, chave: str, video: Path) -> tuple[bool, str]:
+    """Tenta cada caminho conhecido até o campo de arquivo.
+
+    Devolve (conseguiu, descrição de onde parou).
+    """
+    ultimo = "nenhum caminho conhecido para esta rede"
+    for passos in CAMINHO_ATE_O_ARQUIVO.get(chave, ((),)):
+        try:
+            for seletor in passos:
+                pagina.click(seletor, timeout=6000)
+                pagina.wait_for_timeout(800)
+            campo = pagina.wait_for_selector(
+                "input[type=file]", timeout=8000, state="attached")
+            campo.set_input_files(str(video))
+            # Anexar não é instantâneo: sem esperar, o print sai antes de a
+            # página reagir e parece que não funcionou.
+            pagina.wait_for_timeout(2500)
+            return True, ""
+        except Exception as e:  # noqa: BLE001 — caminho ausente é esperado
+            ultimo = (f"parei em '{passos[0]}'" if passos
+                      else f"não apareceu campo de arquivo: {str(e)[:50]}")
+            continue
+    return False, ultimo
+
+
+def _mostrar(ui, pagina, titulo: str) -> None:
+    """Print da janela do navegador dentro da tela do OMEGA.
+
+    Pedido do Samuel: acompanhar sem ter que caçar a janela do Chrome. Também
+    é o que torna uma falha diagnosticável — a mensagem diz onde parou, o
+    print mostra o que havia lá.
+    """
+    if ui is None or not hasattr(ui, "show_image"):
+        return
+    try:
+        PRINTS.mkdir(parents=True, exist_ok=True)
+        alvo = PRINTS / "navegador.png"
+        pagina.screenshot(path=str(alvo), full_page=False)
+        ui.show_image(titulo, str(alvo))
+    except Exception:  # noqa: BLE001 — print é conveniência, não pode derrubar
+        pass
+
+
+def ver(ui=None) -> str:
+    """"O que você está vendo?" — print do navegador na tela do OMEGA."""
+    with _trava:
+        contexto = _estado["contexto"]
+        if contexto is None or not contexto.pages:
+            return "Não estou com nenhuma página aberta."
+        pagina = contexto.pages[-1]
+        try:
+            endereco = pagina.url
+        except Exception:  # noqa: BLE001
+            return "A janela do navegador foi fechada."
+        _mostrar(ui, pagina, "Navegador do OMEGA")
+    curto = endereco.split("?")[0][:70]
+    return f"Estou em {curto}. Coloquei o print na tela."
 
 
 def fechar() -> str:

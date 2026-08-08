@@ -1660,6 +1660,7 @@ class MainWindow(QMainWindow):
         ("parar", "interrompe a leitura"),
         ("esquece", "troca de assunto"),
         ("revisar", "como ele te entende"),
+        ("ver navegador", "print do que ele vê"),
         ("ensinar X é Y", "corrige o que ele ouve"),
         ("imagem <descrição>", "gera imagem (OpenAI)"),
         ("— produção —", None),
