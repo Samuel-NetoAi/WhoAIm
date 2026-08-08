@@ -2017,6 +2017,15 @@ class OmegaUI:
 
     def write_log(self, text: str):
         self._win._log_sig.emit(text)
+        # Eco no terminal com OMEGA_LOG=1. A janela é o lugar certo para o
+        # log no uso normal, mas quando algo dá errado na PARTIDA — qual
+        # motor subiu, por que a voz caiu — a janela some junto com o
+        # processo e não sobra nada para ler.
+        if os.environ.get("OMEGA_LOG"):
+            try:
+                print(text, flush=True)
+            except Exception:  # noqa: BLE001
+                pass
 
     def trazer_para_frente(self):
         """Traz a janela de volta — usado pelo gesto de duas palmas."""
