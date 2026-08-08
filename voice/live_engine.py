@@ -130,7 +130,7 @@ class LiveEngine:
 
             cfg = json.loads(
                 (Path(__file__).resolve().parent / "config" / "api_keys.json")
-                .read_text(encoding="utf-8")
+                .read_text(encoding="utf-8-sig")
             )
             return bool(cfg.get("sempre_ouvindo"))
         except Exception:  # noqa: BLE001

@@ -32,7 +32,7 @@ class UIFalsa:
 def main() -> int:
     falhas = []
     chaves = json.loads(
-        (BASE_DIR / "config" / "api_keys.json").read_text(encoding="utf-8")
+        (BASE_DIR / "config" / "api_keys.json").read_text(encoding="utf-8-sig")
     )
     ui = UIFalsa()
     motor = FreeEngine(

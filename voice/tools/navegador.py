@@ -79,7 +79,8 @@ CAMINHO_ATE_O_ARQUIVO: dict[str, tuple[tuple[str, ...], ...]] = {
     ),
 }
 
-_estado: dict = {"playwright": None, "contexto": None}
+_estado: dict = {"playwright": None, "contexto": None,
+                 "navegador": ""}
 _trava = threading.Lock()
 
 
@@ -112,19 +113,47 @@ def disponivel() -> bool:
 # É limitação do Opera com automação. O Samuel pode continuar usando o GX
 # normalmente: a gravação de aula e a captura de tela não dependem de qual
 # navegador é, só do que sai no som e do que está na tela.
+# BRAVE FUNCIONA — testado: lançou e navegou em example.com, no upload do
+# YouTube e no próprio Trends. Fica depois do Chrome só porque o Brave bloqueia
+# rastreador por padrão, e formulário de upload de rede social é o tipo de
+# página onde um bloqueio pode esconder um botão. Se preferir o Brave, ponha
+# `"navegador": "brave"` no config.
 NAVEGADORES = (
     (r"C:\Program Files\Google\Chrome\Application\chrome.exe", "Chrome"),
     (r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe", "Chrome"),
+    (r"C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe", "Brave"),
+    (r"C:\Program Files (x86)\BraveSoftware\Brave-Browser\Application\brave.exe", "Brave"),
     (r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe", "Edge"),
     (r"C:\Program Files\Microsoft\Edge\Application\msedge.exe", "Edge"),
 )
 
 
-def _executavel() -> str | None:
-    for caminho, _ in NAVEGADORES:
+def _preferido() -> str:
+    """Qual navegador o Samuel escolheu no config, se escolheu algum."""
+    try:
+        import json
+
+        cfg = json.loads((BASE_DIR / "config" / "api_keys.json")
+                         .read_text(encoding="utf-8-sig"))
+        return (cfg.get("navegador") or "").strip().lower()
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _executavel() -> tuple[str, str] | tuple[None, None]:
+    """(caminho, nome) do navegador a usar."""
+    preferido = _preferido()
+    if preferido:
+        # Caminho completo também vale, para quem instalou fora do padrão.
+        if Path(preferido).exists():
+            return preferido, Path(preferido).stem
+        for caminho, nome in NAVEGADORES:
+            if nome.lower() == preferido and Path(caminho).exists():
+                return caminho, nome
+    for caminho, nome in NAVEGADORES:
         if Path(caminho).exists():
-            return caminho
-    return None
+            return caminho, nome
+    return None, None
 
 
 def _abrir_contexto():
@@ -143,9 +172,14 @@ def _abrir_contexto():
         "args": ["--start-maximized"],
         "no_viewport": True,
     }
-    executavel = _executavel()
+    executavel, nome = _executavel()
     if executavel:
         opcoes["executable_path"] = executavel
+        # Sem isto o Brave abre o tour de boas-vindas na primeira vez e a
+        # navegação chega numa aba que não é a nossa.
+        opcoes["args"] = list(opcoes["args"]) + ["--no-first-run",
+                                                 "--no-default-browser-check"]
+    _estado["navegador"] = nome or "Chromium"
     contexto = pw.chromium.launch_persistent_context(**opcoes)
     _estado.update({"playwright": pw, "contexto": contexto})
     return contexto
@@ -163,6 +197,9 @@ def abrir(nome_rede: str) -> str:
     """Abre a rede no navegador do OMEGA (já logado, se você já entrou)."""
     if not disponivel():
         return "O navegador não está instalado. Rode: pip install playwright"
+    if _executavel()[0] is None:
+        return ("Não achei Chrome, Brave nem Edge nesta máquina. O Opera GX "
+                "não serve: ele abre mas não navega sob automação.")
     achado = _resolver_rede(nome_rede)
     if not achado:
         return f"Não conheço a rede {nome_rede}. Tenho YouTube, Instagram, TikTok e X."
@@ -170,7 +207,8 @@ def abrir(nome_rede: str) -> str:
     try:
         with _trava:
             _ir_para(url)
-        return f"{rotulo} aberto. Se pedir login, entre você mesmo — eu não uso senha."
+        return (f"{rotulo} aberto no {_estado['navegador']}. Se pedir login, "
+                "entre você mesmo — eu não uso senha.")
     except Exception as e:  # noqa: BLE001 — vira frase falada
         return f"Não consegui abrir o {rotulo}: {str(e)[:90]}"
 

@@ -35,7 +35,7 @@ CONFIG = Path(__file__).resolve().parent / "config" / "api_keys.json"
 
 def chave() -> str:
     try:
-        return json.loads(CONFIG.read_text(encoding="utf-8")).get("gemini_api_key", "")
+        return json.loads(CONFIG.read_text(encoding="utf-8-sig")).get("gemini_api_key", "")
     except Exception:  # noqa: BLE001
         return ""
 

@@ -68,6 +68,32 @@ class TestSemNavegador(unittest.TestCase):
     def test_ver_sem_janela_aberta(self):
         self.assertIn("Não estou", navegador.ver())
 
+    def test_opera_gx_nao_entra_na_lista(self):
+        """Ele abre e não navega — testado. Entrar aqui seria armadilha."""
+        nomes = " ".join(n for _, n in navegador.NAVEGADORES).lower()
+        self.assertNotIn("opera", nomes)
+
+    def test_brave_e_uma_opcao(self):
+        """Testado: lança e navega, inclusive no upload do YouTube."""
+        nomes = [n for _, n in navegador.NAVEGADORES]
+        self.assertIn("Brave", nomes)
+
+    def test_config_escolhe_o_navegador(self):
+        import json
+        from unittest.mock import patch
+
+        with patch.object(navegador, "_preferido", return_value="brave"):
+            caminho, nome = navegador._executavel()
+        if caminho:
+            self.assertEqual(nome, "Brave")
+
+    def test_sem_navegador_nenhum_explica_o_opera(self):
+        from unittest.mock import patch
+
+        with patch.object(navegador, "_executavel", return_value=(None, None)):
+            r = navegador.abrir("youtube")
+        self.assertIn("Opera GX não serve", r)
+
     def test_youtube_aponta_para_a_caixa_de_envio(self):
         """A URL do Studio caía no login; esta abre o envio direto."""
         self.assertEqual(navegador.ENVIO["youtube"], "https://www.youtube.com/upload")

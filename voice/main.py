@@ -429,7 +429,7 @@ def ligar_avisos(ui, engine=None) -> None:
 
 
 def load_config() -> dict:
-    return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+    return json.loads(CONFIG_PATH.read_text(encoding="utf-8-sig"))
 
 
 def openai_tem_saldo(key: str) -> bool:

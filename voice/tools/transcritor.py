@@ -95,7 +95,7 @@ def _modelo_configurado() -> str:
 
         cfg = json.loads(
             (Path(__file__).resolve().parent.parent / "config" / "api_keys.json")
-            .read_text(encoding="utf-8")
+            .read_text(encoding="utf-8-sig")
         )
         return (cfg.get("whisper_modelo") or MODELO_PADRAO).strip()
     except Exception:  # noqa: BLE001 — config ausente não pode impedir de ouvir
