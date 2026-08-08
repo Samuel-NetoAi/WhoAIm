@@ -51,3 +51,9 @@ voice/imagens/
 # Perfil do navegador do OMEGA — contem SESSOES DE LOGIN. Nunca versionar.
 voice/navegador-perfil/
 voice/nao-entendidas.txt
+
+# Áudio de teste da escuta: gerado (_audio_teste) ou gravado pelo Samuel
+# (gravacoes). Nenhum dos dois é código, e a voz dele não vai para o GitHub.
+voice/_audio_teste/
+voice/gravacoes/
+voice/aprendizado.jsonl

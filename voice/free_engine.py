@@ -52,6 +52,14 @@ MARGEM_DESPERTAR = 3
 # nome de novo — conversa em vez de interrogatório.
 JANELA_CONVERSA = 25.0
 
+# Quantas trocas ficam na memória de conversa. Oito cobre um assunto inteiro
+# sem inflar cada requisição — e a cota gratuita do Gemini é apertada.
+MAX_TURNOS_MEMORIA = 8
+
+# Depois deste silêncio a conversa é considerada outra. Sem isto, um "sim"
+# dito de manhã responderia a uma pergunta feita na véspera.
+MEMORIA_EXPIRA = 900.0
+
 # Ela reabre a cada resposta, contando do momento em que o OMEGA cala a
 # boca. Na prática: o nome só é preciso para começar; a partir daí a
 # conversa segue solta enquanto não houver 25 s de silêncio.
@@ -99,11 +107,19 @@ class FreeEngine:
         # Duas palmas trazem a janela de volta. Escuta o MESMO fluxo do Vosk —
         # nenhuma segunda captura do microfone.
         self._palmas = DetectorDePalmas(taxa=TAXA, ao_detectar=self._ao_bater_palmas)
+        # MEMÓRIA DE CONVERSA. Sem ela cada frase abria uma sessão nova com o
+        # Gemini, e "e o roteiro dela?" era impossível de responder — não por
+        # falha de escuta, mas porque ele não tinha como saber quem era "ela".
+        self._historico: list[dict] = []
+        self._ultima_fala = 0.0
 
         self.ui.on_text_command = self.processar_texto
         # Os comandos locais precisam falar (leitura de documentos em voz
         # alta); expomos a fala pela UI para não acoplar os dois módulos.
         self.ui.falar = self.falar
+        # Mesma razão: os comandos locais precisam poder zerar o assunto sem
+        # conhecer o motor.
+        self.ui.esquecer = self.esquecer
 
     # ---------- voz (SAPI / Maria pt-BR) ----------
 
@@ -224,9 +240,51 @@ class FreeEngine:
             for t in self.tools
         ]
 
+    def _instrucoes_com_estado(self) -> str:
+        """As instruções fixas MAIS o que existe agora no disco.
+
+        Sem a lista de projetos o modelo não tem como resolver "me arruma
+        aquele negócio da Medusa": ele sabe usar as ferramentas, mas não sabe
+        que "Medusa" e "IT A Coisa" são as coisas que existem. A lista muda
+        quando o Samuel cria uma criatura nova, então é lida na hora.
+        """
+        try:
+            from tools.projetos import listar_pastas
+
+            nomes = [p.name for p in listar_pastas()]
+        except Exception:  # noqa: BLE001 — sem disco, seguimos sem a lista
+            nomes = []
+        if not nomes:
+            return self.instructions
+        return (
+            f"{self.instructions}\n\n"
+            f"PROJETOS QUE EXISTEM AGORA: {', '.join(nomes)}.\n"
+            "Quando o usuário citar uma criatura de forma aproximada ou "
+            "errada, case com um destes nomes e siga; só pergunte se duas "
+            "opções empatarem de verdade."
+        )
+
+    def _lembrar(self, pergunta: str, resposta: str) -> None:
+        """Guarda a troca para o próximo turno entender pronome e retomada."""
+        agora = time.monotonic()
+        if agora - self._ultima_fala > MEMORIA_EXPIRA:
+            self._historico.clear()
+        self._ultima_fala = agora
+        self._historico.append({"role": "user", "parts": [{"text": pergunta}]})
+        self._historico.append({"role": "model", "parts": [{"text": resposta}]})
+        # Guardamos só o texto das trocas, não as chamadas de ferramenta: o
+        # que o turno seguinte precisa é do ASSUNTO, e o histórico cru de
+        # functionCall/functionResponse triplicaria o tamanho de cada
+        # requisição numa cota que já vive dando 429.
+        del self._historico[: -2 * MAX_TURNOS_MEMORIA]
+
+    def esquecer(self) -> str:
+        self._historico.clear()
+        return "Esqueci o assunto anterior. Pode começar de novo."
+
     def _chamar_gemini(self, contents: list[dict]) -> dict:
         corpo: dict = {
-            "systemInstruction": {"parts": [{"text": self.instructions}]},
+            "systemInstruction": {"parts": [{"text": self._instrucoes_com_estado()}]},
             "contents": contents,
             "generationConfig": {"maxOutputTokens": 220, "temperature": 0.7},
         }
@@ -249,7 +307,12 @@ class FreeEngine:
         OMEGA responder que tinha começado — sem nada ter acontecido. Mentir
         sobre execução é pior do que não ter a função.
         """
-        contents: list[dict] = [{"role": "user", "parts": [{"text": texto}]}]
+        # O histórico vem ANTES da pergunta: é o que permite "e o roteiro
+        # dela?" logo depois de "me mostra a pesquisa da Medusa".
+        if time.monotonic() - self._ultima_fala > MEMORIA_EXPIRA:
+            self._historico.clear()
+        contents: list[dict] = list(self._historico)
+        contents.append({"role": "user", "parts": [{"text": texto}]})
 
         # Poucas rodadas de propósito: uma cadeia longa de chamadas na camada
         # gratuita gasta cota e demora mais do que a paciência de quem falou.
@@ -267,7 +330,9 @@ class FreeEngine:
             chamadas = [p["functionCall"] for p in partes if "functionCall" in p]
             if not chamadas:
                 texto_final = "".join(p.get("text", "") for p in partes).strip()
-                return texto_final or "Pronto."
+                texto_final = texto_final or "Pronto."
+                self._lembrar(texto, texto_final)
+                return texto_final
 
             contents.append({"role": "model", "parts": partes})
             respostas = []
@@ -300,6 +365,11 @@ class FreeEngine:
             if self.local_handler:
                 resposta = self.local_handler(texto, self.ui)
                 if resposta is not None:
+                    # O comando local também entra na memória. É o caso mais
+                    # comum — "pesquisa da Medusa" nem chega ao Gemini —, e sem
+                    # isto o "e o roteiro dela?" seguinte cairia num modelo que
+                    # nunca ouviu falar da Medusa.
+                    self._lembrar(texto, resposta)
                     self.falar(resposta)
                     return
             self.falar(self._perguntar_gemini(texto))

@@ -1554,6 +1554,7 @@ class MainWindow(QMainWindow):
         ("ler <nome>", "lê em voz alta (voz grátis)"),
         ("narrar <nome>", "lê com a voz boa (gasta créditos)"),
         ("parar", "interrompe a leitura"),
+        ("esquece", "troca de assunto"),
         ("imagem <descrição>", "gera imagem (OpenAI)"),
         ("— produção —", None),
         ("analisar <nome>", "plano de edição"),

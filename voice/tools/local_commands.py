@@ -72,6 +72,8 @@ AJUDA = """# Comandos (funcionam sem créditos)
   crédito por caractere de uma cota de 10 mil por mês, então em texto longo
   ele diz o preço primeiro e espera **`confirmar`** *(= recitar)*
 - **`parar`** — interrompe a leitura (ou duas palmas)
+- **`esquece`** — troca de assunto. Ele lembra das últimas conversas para você
+  poder dizer "e o roteiro *dela*?"; isto zera essa memória
 - **`imagem <descrição>`** — gera uma imagem pela OpenAI e exibe
   *(precisa de saldo na conta OpenAI)*
 - **`projetos`** — lista os projetos encontrados
@@ -433,6 +435,14 @@ def handle(text: str, ui) -> str | None:
     # nunca seja interpretado como outra coisa.
     if low in ("parar", "para", "chega", "silencio", "silêncio", "cala"):
         return _leitura.parar()
+
+    # Trocar de assunto explicitamente. O OMEGA agora carrega as últimas
+    # trocas para entender "e o roteiro dela?"; quando o assunto muda de
+    # verdade, esse mesmo contexto atrapalha.
+    if low in ("esquece", "esquecer", "esquece isso", "novo assunto",
+               "muda de assunto", "outro assunto", "recomeca", "recomeçar"):
+        esquecer = getattr(ui, "esquecer", None)
+        return esquecer() if esquecer else "Nada guardado por aqui."
 
     if low in ("confirmar", "confirma", "confirmado", "pode apagar", "sim apaga"):
         narracao = _leitura.confirmar_narracao()
