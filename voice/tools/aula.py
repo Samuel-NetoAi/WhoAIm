@@ -123,6 +123,39 @@ def retomar() -> None:
         _silenciado = max(0, _silenciado - 1)
 
 
+def _saida_incompativel() -> str | None:
+    """Avisa quando o som NÃO vai sair por onde a Mixagem escuta.
+
+    A Mixagem estéreo pertence a UMA placa (aqui, a Realtek). Se o som estiver
+    saindo pelo HDMI do monitor ou por um fone USB, ela grava silêncio — e o
+    Samuel só descobriria depois de assistir a aula inteira. Verificado nesta
+    máquina: a saída pela NVIDIA não é capturada.
+    """
+    try:
+        apis = sd.query_hostapis()
+        i = next(n for n, a in enumerate(apis) if "WASAPI" in a["name"])
+        saida = sd.query_devices(apis[i].get("default_output_device"))["name"]
+    except Exception:  # noqa: BLE001
+        return None
+    for i, d in enumerate(sd.query_devices()):
+        if d["max_input_channels"] > 0 and _e_mixagem(d["name"]):
+            # Mesma fabricante no nome = mesma placa. Grosseiro, mas é o que
+            # dá para saber sem descer ao WASAPI de verdade, e pega o caso
+            # real (Realtek x NVIDIA).
+            marca = d["name"].split("(")[-1].split(")")[0].split()[0].lower()
+            if marca and marca not in saida.lower():
+                return (f"Atenção: o som está saindo por '{saida}', e eu só "
+                        f"escuto a mixagem da {marca.capitalize()}. Mude a "
+                        "saída de áudio antes, ou eu vou gravar silêncio.")
+            return None
+    return None
+
+
+def _e_mixagem(nome: str) -> bool:
+    n = nome.lower()
+    return "mixagem" in n or "stereo mix" in n or "what u hear" in n
+
+
 def _dispositivo_do_pc() -> tuple[int, int, int] | None:
     """(índice, taxa, canais) da entrada que ouve o que TOCA no PC.
 
@@ -132,8 +165,7 @@ def _dispositivo_do_pc() -> tuple[int, int, int] | None:
     for i, d in enumerate(sd.query_devices()):
         if d["max_input_channels"] <= 0:
             continue
-        nome = d["name"].lower()
-        if "mixagem" in nome or "stereo mix" in nome or "what u hear" in nome:
+        if _e_mixagem(d["name"]):
             return i, int(d["default_samplerate"]), min(2, d["max_input_channels"])
     return None
 
@@ -151,12 +183,35 @@ def _callback(indata, frames, tempo, status):
             _wav.writeframes(pcm)
         except Exception:  # noqa: BLE001 — disco cheio não pode matar o áudio
             pass
+    # Nível acumulado: é como se descobre, em segundos, que a gravação está
+    # muda — som no dispositivo errado, aba sem áudio, autoplay bloqueado pelo
+    # Chrome. Sem isto o silêncio só apareceria no fim da aula.
+    if pcm:
+        amostras16 = np.frombuffer(pcm, dtype=np.int16).astype(np.float32)
+        if amostras16.size:
+            _estado["pico"] = max(_estado.get("pico", 0),
+                                  int(np.abs(amostras16).max()))
     _recentes.append(pcm)
     # deque com maxlen não serve: os blocos têm tamanhos diferentes, então o
     # limite tem que ser em SEGUNDOS, não em número de blocos.
     total = sum(len(b) for b in _recentes) / 2 / TAXA
     while total > JANELA_RECENTE and len(_recentes) > 1:
         total -= len(_recentes.popleft()) / 2 / TAXA
+
+
+# Abaixo disto não há som nenhum saindo pelos alto-falantes.
+PICO_MINIMO = 150
+
+
+def _vigiar_silencio(avisar) -> None:
+    """Avisa UMA vez se os primeiros segundos vieram mudos."""
+    if _parar.wait(12) or not _estado["gravando"]:
+        return
+    if _estado.get("pico", 0) < PICO_MINIMO:
+        avisar(
+            "SYS: não estou ouvindo nada há 12 segundos. Confira se o vídeo "
+            "está tocando e se o som sai pelos alto-falantes — sigo gravando."
+        )
 
 
 def _laco_de_prints(pasta: Path) -> None:
@@ -177,11 +232,16 @@ def _laco_de_prints(pasta: Path) -> None:
             pass
 
 
-def iniciar(curso: str, titulo: str) -> str:
+def iniciar(curso: str, titulo: str, avisar=None) -> str:
     """Começa a gravar a aula que está tocando."""
     global _wav, _stream
     if _estado["gravando"]:
         return f"Já estou gravando {_estado['titulo']}. Diga 'parar aula' antes."
+
+    # Dito ANTES de gravar: descobrir no fim que era o dispositivo errado
+    # custa a aula inteira.
+    aviso_saida = _saida_incompativel()
+    aviso_saida = (aviso_saida + " ") if aviso_saida else ""
 
     achado = _dispositivo_do_pc()
     if achado is None:
@@ -205,7 +265,7 @@ def iniciar(curso: str, titulo: str) -> str:
         return f"Não consegui preparar a pasta da aula: {str(e)[:80]}"
 
     _estado.update({"gravando": True, "pasta": pasta, "titulo": titulo,
-                    "inicio": time.monotonic(), "prints": 0,
+                    "inicio": time.monotonic(), "prints": 0, "pico": 0,
                     "taxa": taxa, "canais": canais, "curso": curso})
     _recentes.clear()
     _parar.clear()
@@ -224,8 +284,11 @@ def iniciar(curso: str, titulo: str) -> str:
 
     threading.Thread(target=_laco_de_prints, args=(pasta / "telas",),
                      name="prints-aula", daemon=True).start()
+    if avisar:
+        threading.Thread(target=_vigiar_silencio, args=(avisar,),
+                         name="silencio-aula", daemon=True).start()
 
-    return (f"Gravando {titulo}. Estou ouvindo o som do computador e tirando "
+    return (aviso_saida + f"Gravando {titulo}. Estou ouvindo o som do computador e tirando "
             "print da tela de meio em meio minuto. Pode perguntar 'o que ele "
             "acabou de dizer' quando quiser. Diga 'parar aula' no fim.")
 

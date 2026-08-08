@@ -127,6 +127,39 @@ class TestGravacaoReal(unittest.TestCase):
         self.assertGreater(segundos, 0.5, "o buffer rolante ficou vazio")
         self.assertLessEqual(segundos, aula.JANELA_RECENTE + 5)
 
+    def test_avisa_quando_grava_silencio(self):
+        """O caso que me pegou: 10 s gravados, tudo mudo, e eu só vi no fim.
+
+        Acontece de verdade — o Chrome bloqueia autoplay com som, o vídeo fica
+        pausado, ou o áudio está saindo por outra placa. Descobrir isso depois
+        de uma aula inteira é perder a aula inteira.
+        """
+        import tools.aula as mod
+
+        avisos = []
+        original = mod.PICO_MINIMO
+        mod._parar.clear()
+        try:
+            # Com nada tocando, os 12 s do vigia viram 1 s para o teste.
+            def vigia_rapido(avisar):
+                if mod._parar.wait(1) or not mod._estado["gravando"]:
+                    return
+                if mod._estado.get("pico", 0) < mod.PICO_MINIMO:
+                    avisar("SYS: não estou ouvindo nada")
+
+            mod._vigiar_silencio, guardado = vigia_rapido, mod._vigiar_silencio
+            aula.iniciar("curso-de-teste", "mudo", avisar=avisos.append)
+            self.pasta = aula._estado["pasta"]
+            time.sleep(2)
+            aula.parar()
+        finally:
+            mod._vigiar_silencio = guardado
+            mod.PICO_MINIMO = original
+
+        print(f"\n   avisos: {avisos}")
+        self.assertTrue(any("ouvindo nada" in a for a in avisos),
+                        "gravou mudo e não avisou")
+
     def test_print_sob_comando(self):
         aula.iniciar("curso-de-teste", "print")
         self.pasta = aula._estado["pasta"]

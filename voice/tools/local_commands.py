@@ -498,7 +498,8 @@ def handle(text: str, ui) -> str | None:
         titulo = re.sub(
             r"^(assistir|assiste|gravar aula|grava aula|comecar aula|"
             r"começar aula|nova aula)\s*", "", raw, flags=re.I).strip()
-        return _aula.iniciar(_aula.curso_atual(), titulo or "aula sem nome")
+        return _aula.iniciar(_aula.curso_atual(), titulo or "aula sem nome",
+                             avisar=ui.write_log)
 
     if low.startswith(("curso ", "novo curso ")) and "processar" not in low:
         from . import aula as _aula
