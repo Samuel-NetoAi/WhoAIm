@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import html
 import re
+import unicodedata
 from urllib.parse import quote, urlparse
 
 import requests
@@ -42,6 +43,11 @@ _CABECALHOS = {
 TEMPO_LIMITE = 20
 MAX_RESULTADOS = 5
 MAX_TEXTO_PAGINA = 4000
+
+
+def _sem_acento(texto: str) -> str:
+    return "".join(c for c in unicodedata.normalize("NFD", texto.lower())
+                   if unicodedata.category(c) != "Mn")
 
 
 def _limpar_html(trecho: str) -> str:
@@ -196,8 +202,13 @@ def _termos_chave(pergunta: str) -> list[str]:
             tentativas.append(proprios[0])
     if uteis:
         tentativas.append(" ".join(uteis[:3]))
-        # O termo mais longo costuma ser o nome da criatura.
-        tentativas.append(max(uteis, key=len))
+        # Uma palavra sozinha SÓ quando não há nome próprio. "Mais longa" não
+        # é o mesmo que "mais distintiva": em "Zxqwbrtl Vplmqx criatura
+        # inventada", a mais longa é "inventada", e buscá-la trouxe artigos
+        # sobre a Inglaterra e a Itália. Fonte irrelevante é pior que fonte
+        # nenhuma, porque convida o modelo a costurar uma resposta.
+        if not proprios:
+            tentativas.append(max(uteis, key=len))
 
     vistos, saida = set(), []
     for t in tentativas:
@@ -222,8 +233,26 @@ def conferir(pergunta: str) -> str:
     partes: list[str] = []
     vistas: set[str] = set()
 
+    # As palavras que a fonte PRECISA mencionar para valer alguma coisa. Sem
+    # esta trava, o recuo para termos mais amplos devolve material que não tem
+    # relação com a pergunta — e o modelo, recebendo "fontes consultadas",
+    # tende a costurar uma resposta a partir delas. A regra de nunca inventar
+    # não se sustenta só na instrução; o material entregue tem que ser limpo.
+    distintivas = {
+        _sem_acento(p) for p in re.findall(r"[\wÀ-ÿ'-]+", pergunta)
+        if len(p) > 3 and p.lower() not in _VAZIAS
+    }
+
+    def relevante(titulo: str, resumo: str) -> bool:
+        if not distintivas:
+            return True
+        texto = _sem_acento(f"{titulo} {resumo}")
+        return any(termo in texto for termo in distintivas)
+
     def juntar(titulo: str, resumo: str, url: str) -> None:
         if not resumo or url in vistas:
+            return
+        if not relevante(titulo, resumo):
             return
         vistas.add(url)
         partes.append(f"{titulo}\n{resumo}\nFonte: {url}")

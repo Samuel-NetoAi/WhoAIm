@@ -55,6 +55,11 @@ BLOCO = 1600            # 100 ms — pedaço pequeno o bastante para barge-in
 # acabado, e insistir só faz o OMEGA ficar mudo mais tempo.
 MAX_FALHAS = 3
 
+# Quanto tempo a conversa segue aberta depois da última interação. Mais longo
+# que os 25 s do motor local porque aqui a conversa é fluida de verdade — e o
+# relógio conta a partir do fim da fala DELE, não do pedido.
+JANELA_CONVERSA = 60.0
+
 
 class LiveEngine:
     """Mesma interface do `FreeEngine`: `run()`, `falar()`, `processar_texto()`."""
@@ -80,6 +85,18 @@ class LiveEngine:
         # de mostrar um traceback.
         self.motivo_da_queda = ""
 
+        # Portão da palavra de ativação. `sempre_ouvindo` no config desliga,
+        # para quem prefira a conversa contínua e aceite o OMEGA comentando o
+        # que se fala na sala.
+        self._janela_ate = 0.0
+        self._portao = None
+        if not self._sempre_ouvindo():
+            from tools.despertar import Portao
+
+            self._portao = Portao(
+                ao_abrir=lambda frase: self.ui.write_log(f"Você: {frase}")
+            )
+
         self.ui.on_text_command = self.processar_texto
         self.ui.falar = self.falar
         # Leitura de documento NÃO passa pelo modelo — ver `falar_leitura`.
@@ -102,6 +119,20 @@ class LiveEngine:
                 # motor por causa dela deixa o OMEGA surdo. Já aconteceu:
                 # a exceção subia daqui e matava a thread inteira.
                 self.ui.write_log(f"SYS: atalho global indisponível ({str(e)[:60]}).")
+
+    @staticmethod
+    def _sempre_ouvindo() -> bool:
+        try:
+            import json
+            from pathlib import Path
+
+            cfg = json.loads(
+                (Path(__file__).resolve().parent / "config" / "api_keys.json")
+                .read_text(encoding="utf-8")
+            )
+            return bool(cfg.get("sempre_ouvindo"))
+        except Exception:  # noqa: BLE001
+            return False
 
     # ---------- interface comum com o motor local ----------
 
@@ -144,10 +175,13 @@ class LiveEngine:
         if _leitura.lendo():
             self.ui.write_log("SYS: Ctrl+Espaço — " + _leitura.parar())
             return
-        # Na Live não existe palavra de ativação: o modelo já está ouvindo.
-        # A tecla serve para calar o OMEGA no meio de uma resposta longa.
+        # A tecla faz duas coisas: cala o OMEGA no meio de uma resposta longa
+        # e abre a conversa sem precisar dizer o nome.
         self._descartar_saida()
-        self.ui.write_log("SYS: Ctrl+Espaço — pode falar.")
+        if self._portao is not None and not self._aberto():
+            self._abrir_janela()
+            return
+        self.ui.write_log("SYS: atalho — pode falar.")
 
     # ---------- ferramentas ----------
 
@@ -180,13 +214,48 @@ class LiveEngine:
             # palmas, Ctrl+Espaço, ou o botão de parar.
             return
 
+        # PORTÃO DA PALAVRA DE ATIVAÇÃO. Sem ele o OMEGA responde a qualquer
+        # conversa da sala — aconteceu no primeiro uso real, com ele opinando
+        # sobre um assunto que não era com ele. Enquanto fechado, nada chega
+        # ao Gemini; o `tiny` local decide, em 0,07 s, se chamaram pelo nome.
+        if self._portao is not None and not self._aberto():
+            trecho = self._portao.alimentar(dados)
+            if trecho is None:
+                return
+            # Chamaram: a frase INTEIRA que estava sendo gravada vai junto,
+            # senão "Ômega, monta o vídeo da Medusa" abriria o portão e
+            # perderia o comando.
+            self._abrir_janela()
+            self._entrada.put(trecho)
+            return
+
         self._entrada.put(dados)
+
+    # ---------- janela de conversa ----------
+
+    def _aberto(self) -> bool:
+        return time.monotonic() < self._janela_ate
+
+    def _abrir_janela(self) -> None:
+        estava_fechado = not self._aberto()
+        self._janela_ate = time.monotonic() + JANELA_CONVERSA
+        if estava_fechado:
+            self.ui.write_log("SYS: pois não, senhor? (ouvindo)")
+            if not self.ui.muted:
+                self.ui.set_state("LISTENING")
+            if self._portao is not None:
+                self._portao.limpar()
 
     def _ao_bater_palmas(self) -> None:
         from tools import leitura as _leitura
 
         if _leitura.lendo():
             self.ui.write_log("SYS: duas palmas — " + _leitura.parar())
+            return
+        # Longe do PC, as palmas são o equivalente da tecla: abrem a conversa
+        # sem precisar acertar a palavra de ativação.
+        if self._portao is not None and not self._aberto():
+            self._abrir_janela()
             return
         self.ui.write_log("SYS: duas palmas — trazendo a janela para a frente.")
         self.ui.trazer_para_frente()
@@ -294,8 +363,15 @@ class LiveEngine:
             if "setupComplete" not in resposta:
                 raise RuntimeError(f"a sessão não abriu: {list(resposta)[:2]}")
 
-            self.ui.write_log("SYS: voz em tempo real ligada. Pode falar — "
-                              "sem precisar dizer o nome, e pode me interromper.")
+            if self._portao is None:
+                self.ui.write_log(
+                    "SYS: voz em tempo real ligada, SEMPRE ouvindo. Pode falar "
+                    "e pode me interromper — mas eu respondo a qualquer "
+                    "conversa perto do microfone.")
+            else:
+                self.ui.write_log(
+                    "SYS: voz em tempo real ligada. Diga 'Ômega' (ou bata duas "
+                    "palmas) e depois converse à vontade — pode me interromper.")
             if not self.ui.muted:
                 self.ui.set_state("LISTENING")
 
@@ -365,6 +441,12 @@ class LiveEngine:
                     self._saida.put(base64.b64decode(bruto))
 
             if conteudo.get("turnComplete"):
+                # A janela conta a partir do fim da fala DELE. Contando do
+                # pedido, uma resposta longa a consumiria inteira e o nome
+                # voltaria a ser obrigatório a cada frase — o mesmo defeito
+                # que o motor local já teve.
+                if self._portao is not None:
+                    self._janela_ate = time.monotonic() + JANELA_CONVERSA
                 if ouvido:
                     self.ui.write_log(f"Você: {''.join(ouvido).strip()}")
                     ouvido.clear()

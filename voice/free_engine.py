@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import json
 import queue
-from difflib import SequenceMatcher
 import re
 import threading
 import time
@@ -37,16 +36,10 @@ GEMINI_URL = (
     "gemini-flash-latest:generateContent"
 )
 
-# Palavra de ativação: sem ela, qualquer conversa no ambiente viraria
-# comando. As variantes abaixo são as que os transcritores REALMENTE
-# produzem para "Ômega" — observadas no log, não imaginadas.
-DESPERTAR = ("omega", "o mega", "omegas", "amega", "omeca",
-             "omida", "omeda", "omena", "nega", "amiga", "omeya")
-
-# Quantas palavras iniciais podem vir antes do nome. O Vosk costuma grudar
-# um "é", "ó" ou ruído no começo da frase; exigir que o nome seja a PRIMEIRA
-# palavra fazia o comando inteiro ser descartado em silêncio.
-MARGEM_DESPERTAR = 3
+# A palavra de ativação vive em tools/despertar.py, que é a MESMA definição
+# usada pelo portão do motor Live. Ter duas listas divergindo foi o que fez
+# "a minha amiga falou que o filme é bom" acordar o OMEGA: "amiga" tinha
+# entrado como variante na época do Vosk e virou armadilha depois.
 
 # Depois de atendido, o OMEGA continua ouvindo por este tempo sem exigir o
 # nome de novo — conversa em vez de interrogatório.
@@ -539,18 +532,11 @@ class FreeEngine:
         if time.monotonic() < getattr(self, "_janela_ate", 0.0):
             return frase.strip(" ,.")
 
-        # O nome pode não ser a primeira palavra — o Vosk gruda ruído antes.
-        for i, palavra in enumerate(palavras[:MARGEM_DESPERTAR]):
-            limpa = _sem_acento(palavra.lower().strip(",.!?;:¿¡"))
-            # Semelhança em vez de igualdade: o modelo entrega "alta",
-            # "elfa", "auf" para a mesma palavra falada. Exigir a grafia
-            # exata fazia o OMEGA parecer surdo ao próprio nome.
-            if limpa in DESPERTAR or any(
-                SequenceMatcher(None, limpa, nome).ratio() >= 0.75
-                for nome in ("omega", "ômega")
-            ):
-                return " ".join(palavras[i + 1:]).strip(" ,.")
-        return None
+        # O nome pode não ser a primeira palavra — o modelo gruda ruído antes.
+        from tools.despertar import encontrar_nome
+
+        chamaram, resto = encontrar_nome(frase)
+        return resto if chamaram else None
 
     def stop(self) -> None:
         self._parar.set()

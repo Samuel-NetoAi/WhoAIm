@@ -20,6 +20,7 @@ from __future__ import annotations
 import os
 import sys
 import wave
+from collections import deque
 from pathlib import Path
 
 import numpy as np
@@ -34,6 +35,7 @@ LIMIAR_VOZ = 380.0        # RMS acima disso conta como fala
 SILENCIO_FIM = 0.8        # segundos de silêncio que encerram a frase
 MINIMO_FALA = 0.35        # frases mais curtas que isso são ruído
 MAXIMO_FALA = 25.0        # trava de segurança contra ruído contínuo
+PRE_ROLO = 0.4            # segundos guardados ANTES do início da fala
 
 # Silero VAD (embutido no faster-whisper). O detector de energia lá embaixo
 # resolve QUANDO a frase acabou; isto resolve o que dentro dela é voz. Sem
@@ -193,15 +195,33 @@ class DetectorDeFala:
         self._falando = False
         self._silencio = 0.0
         self._duracao = 0.0
+        # PRÉ-ROLO: os blocos imediatamente ANTERIORES ao início da fala.
+        #
+        # Sem isto a primeira palavra é decapitada. O ataque de uma palavra
+        # sobe de volume gradualmente, e o bloco em que ela começa quase
+        # sempre fica abaixo do limiar — então a gravação começa no meio dela.
+        # Foi assim que "Ômega, pesquisa sobre o Sobek" chegou ao modelo como
+        # "Pesquisa sobre o Sobek", com a palavra de ativação sumida: parecia
+        # o OMEGA estar surdo ao próprio nome, e era o microfone perdendo a
+        # sílaba de entrada.
+        self._pre = deque(maxlen=max(1, int(PRE_ROLO * taxa * 2 / 3200)))
 
     def alimentar(self, bloco: bytes) -> bytes | None:
         """Devolve o áudio da frase quando ela acaba; senão None."""
         segundos = len(bloco) / 2 / self.taxa
         if energia(bloco) >= LIMIAR_VOZ:
+            if not self._falando:
+                # Começou a falar: recupera o que veio logo antes.
+                for anterior in self._pre:
+                    self._buffer.extend(anterior)
+                    self._duracao += len(anterior) / 2 / self.taxa
+                self._pre.clear()
             self._falando = True
             self._silencio = 0.0
             self._buffer.extend(bloco)
             self._duracao += segundos
+        elif not self._falando:
+            self._pre.append(bloco)
         elif self._falando:
             # Guarda o silêncio curto: é a pausa natural entre palavras.
             self._buffer.extend(bloco)
@@ -218,6 +238,7 @@ class DetectorDeFala:
 
     def limpar(self) -> None:
         self._buffer.clear()
+        self._pre.clear()
         self._falando = False
         self._silencio = 0.0
         self._duracao = 0.0
