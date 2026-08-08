@@ -91,6 +91,13 @@ class LiveEngine:
         # para quem prefira a conversa contínua e aceite o OMEGA comentando o
         # que se fala na sala.
         self._janela_ate = 0.0
+        # MICROFONE TRAVADO (a tecla como "o chão é meu"). O Samuel reclamou
+        # de ser cortado enquanto ainda formulava a frase: o modelo decide o
+        # fim do turno pelo silêncio, e pensar no meio da frase parece fim.
+        # Com o microfone travado, NADA vai ao Gemini até ele soltar — então
+        # não há como o modelo responder antes da hora.
+        self._travado = False
+        self._fala_presa: list[bytes] = []
         self._portao = None
         if not self._sempre_ouvindo():
             from tools.despertar import Portao
@@ -172,18 +179,48 @@ class LiveEngine:
         self._enviar_texto(texto)
 
     def _ao_atalho_global(self) -> None:
+        """A tecla é um INTERRUPTOR: aperta, fala à vontade, aperta de novo.
+
+        Enquanto travado o áudio fica guardado aqui e o Gemini não vê nada —
+        é isso que impede ele de responder no meio de uma frase ainda sendo
+        pensada. Ao soltar, tudo vai de uma vez, como um turno só.
+        """
         from tools import leitura as _leitura
 
         if _leitura.lendo():
-            self.ui.write_log("SYS: Ctrl+Espaço — " + _leitura.parar())
+            self.ui.write_log("SYS: atalho — " + _leitura.parar())
             return
-        # A tecla faz duas coisas: cala o OMEGA no meio de uma resposta longa
-        # e abre a conversa sem precisar dizer o nome.
-        self._descartar_saida()
-        if self._portao is not None and not self._aberto():
+
+        if self._travado:
+            self._travado = False
+            presa, self._fala_presa = self._fala_presa, []
+            segundos = sum(len(b) for b in presa) / 2 / TAXA_ENTRADA
+            if segundos < 0.4:
+                self.ui.write_log("SYS: microfone liberado (não ouvi nada).")
+                return
             self._abrir_janela()
+            for pedaco in presa:
+                self._entrada.put(pedaco)
+            self._fim_de_turno()
+            self.ui.write_log(f"SYS: ▸ enviado ({segundos:.0f}s). "
+                              "Agora ele responde.")
             return
-        self.ui.write_log("SYS: atalho — pode falar.")
+
+        # Travando: cala o OMEGA se estiver falando e toma a palavra.
+        self._descartar_saida()
+        self._travado = True
+        self._fala_presa = []
+        self.ui.write_log("SYS: ● microfone SEU — fale à vontade, sem pressa. "
+                          "Aperte de novo quando terminar.")
+
+    def _fim_de_turno(self) -> None:
+        """Diz ao Gemini que a fala acabou, para ele responder agora."""
+        if not self._laco or not self._ws:
+            return
+        asyncio.run_coroutine_threadsafe(
+            self._ws.send(json.dumps({"realtimeInput": {"audioStreamEnd": True}})),
+            self._laco,
+        )
 
     # ---------- ferramentas ----------
 
@@ -214,6 +251,11 @@ class LiveEngine:
             # Gemini responderia ao próprio dossiê — gastando cota para
             # comentar o que ele mesmo está lendo. Para interromper: duas
             # palmas, Ctrl+Espaço, ou o botão de parar.
+            return
+
+        if self._travado:
+            # Guardado, não enviado: o turno só existe quando ele soltar.
+            self._fala_presa.append(dados)
             return
 
         # PORTÃO DA PALAVRA DE ATIVAÇÃO. Sem ele o OMEGA responde a qualquer
@@ -254,8 +296,11 @@ class LiveEngine:
         if _leitura.lendo():
             self.ui.write_log("SYS: duas palmas — " + _leitura.parar())
             return
-        # Longe do PC, as palmas são o equivalente da tecla: abrem a conversa
-        # sem precisar acertar a palavra de ativação.
+        # Longe do PC, as palmas fazem o mesmo que a tecla — inclusive soltar
+        # o microfone travado, senão ele ficaria preso sem teclado por perto.
+        if self._travado:
+            self._ao_atalho_global()
+            return
         if self._portao is not None and not self._aberto():
             self._abrir_janela()
             return

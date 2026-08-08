@@ -121,14 +121,36 @@ def transcrever_aula(pasta: Path, modelo=None) -> str:
             vad_filter=True, vad_parameters=VAD,
         )
 
+        # Os trechos em que o OMEGA falou por cima da aula. Marcados durante
+        # a gravação (tools/aula.py) em vez de descartados na hora: assim a
+        # aula não perde conteúdo e a limpeza acontece AQUI, onde é
+        # reversível — se a marcação errar, o áudio continua inteiro no wav.
+        mudos = []
+        try:
+            import json
+
+            mudos = json.loads(
+                (pasta / "falas-do-omega.json").read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            pass
+
+        def e_do_omega(inicio: float, fim: float) -> bool:
+            meio = (inicio + fim) / 2
+            return any(a <= meio <= b for a, b in mudos)
+
         linhas = [f"# {pasta.name}", "",
                   f"Áudio: {_mmss(duracao)} · transcrito com {MODELO}", ""]
+        descartados = 0
         for s in segmentos:
             if _estado["cancelado"]:
                 return f"{pasta.name}: cancelado."
             texto = s.text.strip()
-            if texto:
-                linhas.append(f"**[{_mmss(s.start)}]** {texto}")
+            if not texto:
+                continue
+            if e_do_omega(s.start, s.end):
+                descartados += 1
+                continue
+            linhas.append(f"**[{_mmss(s.start)}]** {texto}")
 
         telas = sorted((pasta / "telas").glob("*.jpg")) if (pasta / "telas").is_dir() else []
         if telas:
@@ -139,9 +161,10 @@ def transcrever_aula(pasta: Path, modelo=None) -> str:
         (pasta / "transcricao.md").write_text("\n".join(linhas) + "\n",
                                               encoding="utf-8")
         gasto = time.time() - inicio
+        extra = f", {descartados} trecho(s) da minha própria voz fora" if descartados else ""
         return (f"{pasta.name}: {_mmss(duracao)} de aula em "
                 f"{duracao_falada(gasto)} ({duracao / max(gasto, 1):.1f}x), "
-                f"{len(telas)} telas.")
+                f"{len(telas)} telas{extra}.")
     finally:
         if proprio:
             del modelo

@@ -65,11 +65,19 @@ _trava = threading.Lock()
 _recentes: deque = deque()
 _wav: wave.Wave_write | None = None
 _stream = None
+# Um evento POR SESSÃO, não global. Com um só, parar e começar outra aula
+# deixava a thread de leitura antiga viva: ela via o evento ser limpo pelo
+# novo `iniciar()` e voltava a escrever — duas threads no mesmo arquivo, com
+# taxas diferentes. Cada gravação carrega o próprio sinal de parada.
 _parar = threading.Event()
 # Contador, não booleano: a leitura de um documento e um aviso de render podem
 # se sobrepor, e um `retomar()` cedo demais deixaria a voz do OMEGA entrar na
 # gravação da aula.
 _silenciado = 0
+
+
+def _segundos_de_aula() -> float:
+    return time.monotonic() - _estado.get("inicio", time.monotonic())
 
 
 def _sem_acento(texto: str) -> str:
@@ -156,24 +164,41 @@ def _e_mixagem(nome: str) -> bool:
     return "mixagem" in n or "stereo mix" in n or "what u hear" in n
 
 
-# A ORDEM AQUI NÃO É ESTÉTICA. A mesma Mixagem estéreo aparece uma vez por API
-# de áudio, e escolher a primeira que surgir é loteria: numa execução saiu a
-# MME (funcionou), na seguinte saiu a WDM-KS e a captura morreu com
-# "Invalid device [PaErrorCode -9996]".
+# CAPTURA POR WASAPI LOOPBACK, e não mais pela Mixagem estéreo.
 #
-# WDM-KS fica FORA de propósito. Ela enumera o pino de hardware direto, então
-# a Mixagem aparece ali MESMO DESABILITADA no Windows — é uma presença que
-# mente. Se ela é a única que resta, o dispositivo está desligado, e o certo é
-# dizer isso em vez de tentar abrir e falhar sem explicação.
+# A Mixagem funcionava, mas é frágil de três jeitos que já bateram aqui:
+#  - pode estar DESABILITADA no Windows (aconteceu entre uma sessão e outra);
+#  - pertence a UMA placa, então fone USB ou HDMI do monitor não é capturado;
+#  - aparece uma vez por API de áudio, e escolher a errada (WDM-KS) dava
+#    "Invalid device [-9996]" sem explicação.
+#
+# O loopback do WASAPI (via PyAudioWPatch) não tem nenhum desses problemas:
+# ele grampeia a SAÍDA PADRÃO, seja ela qual for, sem depender de dispositivo
+# habilitado. Testado: capturou e transcreveu com a Mixagem desligada.
+#
+# A Mixagem fica como reserva para máquina sem o pacote instalado.
 _APIS_BOAS = ("MME", "WASAPI", "DirectSound")
 
 
-def _dispositivo_do_pc() -> tuple[int, int, int] | None:
-    """(índice, taxa, canais) da entrada que ouve o que TOCA no PC.
+def _loopback():
+    """(pyaudio, info) da saída padrão grampeada. None se não der."""
+    try:
+        import pyaudiowpatch as pa
+    except ImportError:
+        return None, None
+    try:
+        audio = pa.PyAudio()
+        return audio, audio.get_default_wasapi_loopback()
+    except Exception:  # noqa: BLE001
+        try:
+            audio.terminate()
+        except Exception:  # noqa: BLE001
+            pass
+        return None, None
 
-    Procura a Mixagem estéreo pelo nome, em português e em inglês — o mesmo
-    driver Realtek aparece com rótulo traduzido conforme o idioma do Windows.
-    """
+
+def _dispositivo_do_pc() -> tuple[int, int, int] | None:
+    """RESERVA: a Mixagem estéreo, quando o loopback não estiver disponível."""
     apis = [a["name"] for a in sd.query_hostapis()]
     achados: list[tuple[int, int, int, str]] = []
     for i, d in enumerate(sd.query_devices()):
@@ -181,7 +206,6 @@ def _dispositivo_do_pc() -> tuple[int, int, int] | None:
             continue
         achados.append((i, int(d["default_samplerate"]),
                         min(2, d["max_input_channels"]), apis[d["hostapi"]]))
-
     for preferida in _APIS_BOAS:
         for i, taxa, canais, api in achados:
             if preferida in api:
@@ -197,12 +221,61 @@ def _so_existe_no_wdm() -> bool:
     return bool(vistas) and all("WDM-KS" in v for v in vistas)
 
 
-def _callback(indata, frames, tempo, status):
-    if _silenciado:
-        # A voz do OMEGA está saindo pelos alto-falantes. Descartar é melhor
-        # que gravar: um trecho faltando na aula é recuperável ouvindo de
-        # novo; a voz dele no meio contamina a extração de regras.
+def _ler_do_loopback(audio, info, parar: threading.Event,
+                     pronto: threading.Event) -> None:
+    """Thread que lê o loopback em blocos e alimenta o mesmo caminho de sempre.
+
+    Leitura bloqueante em vez de callback: o PyAudio em modo callback tem as
+    mesmas armadilhas do sounddevice, e aqui não há requisito de latência —
+    é gravação, não conversa.
+    """
+    import pyaudiowpatch as pa
+
+    taxa, canais = int(info["defaultSampleRate"]), info["maxInputChannels"]
+    _estado.update({"taxa": taxa, "canais": canais})
+    try:
+        fluxo = audio.open(format=pa.paInt16, channels=canais, rate=taxa,
+                           input=True, input_device_index=info["index"],
+                           frames_per_buffer=int(taxa * 0.5))
+    except Exception:  # noqa: BLE001
+        pronto.set()
         return
+    pronto.set()
+    try:
+        while not parar.is_set():
+            try:
+                bruto = fluxo.read(int(taxa * 0.5), exception_on_overflow=False)
+            except Exception:  # noqa: BLE001 — dispositivo trocado no meio
+                break
+            _callback(bruto, 0, None, None)
+    finally:
+        try:
+            fluxo.stop_stream()
+            fluxo.close()
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            audio.terminate()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def _callback(indata, frames, tempo, status):
+    # NADA MAIS É DESCARTADO. A primeira versão jogava fora o áudio enquanto o
+    # OMEGA falava, para não sujar a transcrição — e o preço apareceu no uso
+    # real: numa aula de 25 minutos sobraram 16. Metade das perguntas do
+    # Samuel custou um pedaço da aula, e ele não tinha como saber.
+    #
+    # Agora grava sempre e ANOTA o intervalo em que o OMEGA falou. A limpeza
+    # acontece na transcrição, por timestamp, onde ela é reversível — se a
+    # marcação errar, o áudio continua lá para conferir.
+    if _silenciado and not _estado.get("mudo_desde"):
+        _estado["mudo_desde"] = _segundos_de_aula()
+    elif not _silenciado and _estado.get("mudo_desde"):
+        _estado.setdefault("mudos", []).append(
+            (_estado["mudo_desde"], _segundos_de_aula()))
+        _estado["mudo_desde"] = None
+
     amostras = np.frombuffer(bytes(indata), dtype=np.int16).astype(np.float32)
     pcm = para_16k_mono(amostras, _estado["taxa"], _estado["canais"])
     if _wav is not None:
@@ -246,6 +319,8 @@ def _laco_de_prints(pasta: Path) -> None:
 
     while not _parar.wait(INTERVALO_PRINT):
         if _silenciado:
+            # Só o PRINT é pulado: a tela nessa hora costuma ser a janela do
+            # OMEGA, não a aula. O áudio continua sendo gravado.
             continue
         try:
             segundos = int(time.monotonic() - _estado["inicio"])
@@ -265,27 +340,17 @@ def iniciar(curso: str, titulo: str, avisar=None) -> str:
     if _estado["gravando"]:
         return f"Já estou gravando {_estado['titulo']}. Diga 'parar aula' antes."
 
-    # Dito ANTES de gravar: descobrir no fim que era o dispositivo errado
-    # custa a aula inteira.
-    aviso_saida = _saida_incompativel()
-    aviso_saida = (aviso_saida + " ") if aviso_saida else ""
-
-    achado = _dispositivo_do_pc()
-    if achado is None:
-        # Distinguir "não existe" de "existe e está desligada" poupa o Samuel
-        # de procurar um dispositivo que está bem ali, só desabilitado.
+    audio, info = _loopback()
+    reserva = None if audio else _dispositivo_do_pc()
+    if audio is None and reserva is None:
         desligada = _so_existe_no_wdm()
         return (
-            ("A Mixagem estéreo existe nesta máquina mas está DESABILITADA no "
-             "Windows — por isso não consigo ouvir o que toca no PC. "
-             if desligada else
-             "Não achei a Mixagem estéreo nesta máquina. ")
-            + "Ative assim: botão direito no ícone de som, Configurações de "
-            "som, Mais opções de som, aba Gravação, botão direito na área "
-            "vazia, marque 'Mostrar dispositivos desativados', e habilite a "
-            "Mixagem estéreo."
+            "Não consigo ouvir o som do computador. "
+            + ("A Mixagem estéreo está DESABILITADA no Windows e o loopback "
+               "não está disponível. " if desligada else "")
+            + "Rode `pip install PyAudioWPatch` — com ele eu gravo direto da "
+            "saída de áudio, sem depender de dispositivo habilitado."
         )
-    indice, taxa, canais = achado
 
     pasta = (CURSOS / _slug(curso) / "aulas" /
              f"{datetime.now():%Y%m%d-%H%M}-{_slug(titulo)}")
@@ -300,31 +365,68 @@ def iniciar(curso: str, titulo: str, avisar=None) -> str:
 
     _estado.update({"gravando": True, "pasta": pasta, "titulo": titulo,
                     "inicio": time.monotonic(), "prints": 0, "pico": 0,
-                    "taxa": taxa, "canais": canais, "curso": curso})
+                    "curso": curso, "mudos": [], "mudo_desde": None,
+                    "por_onde": ""})
     _recentes.clear()
     _parar.clear()
+    sessao = threading.Event()
+    _estado["parar_sessao"] = sessao
     _wav = arquivo
 
-    try:
-        _stream = sd.RawInputStream(
-            samplerate=taxa, channels=canais, dtype="int16",
-            device=indice, blocksize=int(taxa * 0.5), callback=_callback)
-        _stream.start()
-    except Exception as e:  # noqa: BLE001
-        _wav.close()
-        _wav = None
-        _estado["gravando"] = False
-        return f"Não consegui abrir a captura do som do PC: {str(e)[:80]}"
+    if audio is not None:
+        _estado["por_onde"] = info["name"].split("[")[0].strip()
+        # "GRAVANDO" tem que significar que JÁ está gravando. Abrir o fluxo
+        # leva um instante, e responder antes disso faz o Samuel dar play e
+        # perder os primeiros segundos da aula.
+        pronto = threading.Event()
+        threading.Thread(target=_ler_do_loopback,
+                         args=(audio, info, sessao, pronto),
+                         name="loopback-aula", daemon=True).start()
+        pronto.wait(timeout=3)
+    else:
+        indice, taxa, canais = reserva
+        _estado.update({"taxa": taxa, "canais": canais,
+                        "por_onde": "Mixagem estéreo"})
+        try:
+            _stream = sd.RawInputStream(
+                samplerate=taxa, channels=canais, dtype="int16",
+                device=indice, blocksize=int(taxa * 0.5), callback=_callback)
+            _stream.start()
+        except Exception as e:  # noqa: BLE001
+            _wav.close()
+            _wav = None
+            _estado["gravando"] = False
+            return f"Não consegui abrir a captura do som do PC: {str(e)[:80]}"
 
     threading.Thread(target=_laco_de_prints, args=(pasta / "telas",),
                      name="prints-aula", daemon=True).start()
     if avisar:
         threading.Thread(target=_vigiar_silencio, args=(avisar,),
                          name="silencio-aula", daemon=True).start()
+        # Pulso de vida. O Samuel parou a aula duas vezes só para perguntar se
+        # ainda estava gravando — não havia nada na tela dizendo que sim, e
+        # cada pausa dessas custava conteúdo. Agora ele avisa sozinho.
+        threading.Thread(target=_pulso, args=(avisar,),
+                         name="pulso-aula", daemon=True).start()
 
-    return (aviso_saida + f"Gravando {titulo}. Estou ouvindo o som do computador e tirando "
-            "print da tela de meio em meio minuto. Pode perguntar 'o que ele "
-            "acabou de dizer' quando quiser. Diga 'parar aula' no fim.")
+    return (f"GRAVANDO: {titulo}. Ouvindo por {_estado['por_onde']} e tirando "
+            "print a cada 30 segundos. Vou avisar de dois em dois minutos que "
+            "continuo gravando. Pergunte 'o que ele acabou de dizer' quando "
+            "quiser; para encerrar, 'parar aula'.")
+
+
+# De dois em dois minutos. Curto o bastante para ele não duvidar, longo o
+# bastante para não virar ruído numa aula de uma hora.
+INTERVALO_PULSO = 120.0
+
+
+def _pulso(avisar) -> None:
+    while not _parar.wait(INTERVALO_PULSO):
+        if not _estado["gravando"]:
+            return
+        s = int(_segundos_de_aula())
+        avisar(f"SYS: ● gravando {_estado['titulo']} — {s // 60}:{s % 60:02d}, "
+               f"{_estado['prints']} telas.")
 
 
 def print_agora(rotulo: str = "") -> str:
@@ -359,6 +461,12 @@ def parar() -> str:
         return "Não estou gravando nada, senhor."
 
     _parar.set()
+    sessao = _estado.get("parar_sessao")
+    if sessao is not None:
+        sessao.set()
+    # Dar à thread de leitura tempo de sair do `read()` antes de fechar o wav:
+    # sem isso ela pode escrever num arquivo já fechado.
+    time.sleep(0.6)
     try:
         if _stream is not None:
             _stream.stop()
@@ -378,23 +486,45 @@ def parar() -> str:
 
     pasta = _estado["pasta"]
     titulo, prints = _estado["titulo"], _estado["prints"]
-    _estado.update({"gravando": False, "pasta": None, "titulo": ""})
+
+    # Os intervalos em que o OMEGA falou vão para disco junto do áudio: é o
+    # que permite a transcrição descartar a voz dele SEM descartar a aula.
+    if _estado.get("mudo_desde"):
+        _estado.setdefault("mudos", []).append(
+            (_estado["mudo_desde"], _segundos_de_aula()))
+    try:
+        import json
+
+        (pasta / "falas-do-omega.json").write_text(
+            json.dumps([[round(a, 1), round(b, 1)]
+                        for a, b in _estado.get("mudos", [])]),
+            encoding="utf-8")
+    except Exception:  # noqa: BLE001
+        pass
+
+    _estado.update({"gravando": False, "pasta": None, "titulo": "",
+                    "mudos": [], "mudo_desde": None})
     _recentes.clear()
 
     if duracao < 5:
         # Nada de útil: avisar em vez de deixar uma pasta vazia acumulando.
-        return (f"Parei, mas só gravei {duracao:.0f} segundos de áudio. "
-                "Confira se o som estava tocando pelos alto-falantes.")
+        return (f"PAREI. Mas só gravei {duracao:.0f} segundos de áudio — "
+                "confira se o som estava saindo pelos alto-falantes.")
 
     minutos = int(duracao // 60)
-    return (f"Aula {titulo} gravada: {minutos} minuto(s) de áudio e {prints} "
-            f"prints. Diga 'processar curso' quando quiser que eu transcreva e "
-            f"tire as regras — leva mais ou menos {int(minutos / 1.7)} minutos.")
+    # A confirmação precisa ser INEQUÍVOCA. O Samuel mandou parar quatro vezes
+    # porque a resposta nunca dizia, com todas as letras, que tinha parado —
+    # e ele não tinha como saber se a aula seguia gravando.
+    return (f"PAREI DE GRAVAR. Aula '{titulo}': {minutos} minuto(s) de áudio, "
+            f"{prints} telas, salvo em {pasta.name}. "
+            "Diga 'processar curso' quando quiser as regras — leva menos de um "
+            "minuto por hora de aula.")
 
 
 def situacao() -> str:
     if not _estado["gravando"]:
-        return "Nenhuma aula sendo gravada."
-    passados = int(time.monotonic() - _estado["inicio"])
-    return (f"Gravando {_estado['titulo']} há {passados // 60}:{passados % 60:02d}, "
-            f"{_estado['prints']} prints.")
+        return "NÃO estou gravando aula nenhuma agora."
+    passados = int(_segundos_de_aula())
+    return (f"SIM, ainda gravando '{_estado['titulo']}' — "
+            f"{passados // 60}:{passados % 60:02d} de aula, "
+            f"{_estado['prints']} telas, por {_estado.get('por_onde', 'áudio do PC')}.")

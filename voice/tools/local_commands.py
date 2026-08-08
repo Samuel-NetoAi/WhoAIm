@@ -56,9 +56,11 @@ NOTE_ALIASES = {
 
 AJUDA = """# Comandos (funcionam sem créditos)
 
-> **`Ctrl+Espaço` fala com o OMEGA sem dizer "Ômega".** Funciona de qualquer
-> programa, com a janela dele escondida. O nome continua valendo para quando
-> você está longe do PC — a tecla é para quando você está na frente dele.
+> **`Ctrl+Espaço` é um interruptor: aperte, fale à vontade, aperte de novo.**
+> Enquanto estiver travado ele **não te interrompe** — nada chega ao modelo
+> até você soltar, então pode pensar no meio da frase. Funciona de qualquer
+> programa. Duas palmas soltam também, para quando você estiver longe do
+> teclado. O nome "Ômega" continua valendo para falar sem travar.
 
 > **Fale as palavras em NEGRITO.** Elas foram escolhidas por serem
 > portuguesas e comuns — o reconhecimento de voz erra feio em palavra
@@ -118,7 +120,10 @@ AJUDA = """# Comandos (funcionam sem créditos)
 **Curso** (assistir junto e virar regra do canal)
 - **`vamos assistir a aula de <assunto>`** — grava o som do PC e tira print da
   tela. Fale natural: "começa a aula", "bora assistir aula 4" também valem.
-  **`parar aula`** encerra
+  Ele avisa **de 2 em 2 minutos** que continua gravando, e diz **"PAREI DE
+  GRAVAR"** com todas as letras quando você encerrar
+- **`parar aula`** / *"pode parar de gravar"* — encerra
+- **`como está a aula`** — confirma se ainda está gravando e há quanto tempo
 - **`guarda essa tela`** — print na hora, quando aparecer algo que importa
 - durante a aula: *"Ômega, o que ele acabou de dizer?"*
 - **`processar curso`** — transcreve e extrai as regras *(demora; avisa no fim)*

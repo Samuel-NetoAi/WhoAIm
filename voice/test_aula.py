@@ -21,8 +21,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from tools import aula, transcritor  # noqa: E402
 
 
-def tem_mixagem() -> bool:
+def tem_captura() -> bool:
+    """Loopback do WASAPI, ou a Mixagem estéreo como reserva."""
+    audio, info = aula._loopback()
+    if audio is not None:
+        try:
+            audio.terminate()
+        except Exception:  # noqa: BLE001
+            pass
+        return True
     return aula._dispositivo_do_pc() is not None
+
+
+tem_mixagem = tem_captura   # nome antigo, para não quebrar quem chama
 
 
 class TestSemDispositivo(unittest.TestCase):
@@ -145,7 +156,7 @@ class TestFalaNatural(unittest.TestCase):
                          "aula sem nome")
 
 
-@unittest.skipUnless(tem_mixagem(), "Mixagem estéreo não disponível/ativada")
+@unittest.skipUnless(tem_captura(), "sem captura de áudio do PC")
 class TestGravacaoReal(unittest.TestCase):
     def setUp(self):
         self.pasta = None
@@ -159,51 +170,80 @@ class TestGravacaoReal(unittest.TestCase):
 
             shutil.rmtree(self.pasta, ignore_errors=True)
 
-    def test_grava_o_som_do_pc_e_ignora_a_voz_do_omega(self):
-        from tools import voz_local
+    def test_a_voz_do_omega_sai_na_TRANSCRICAO_nao_no_audio(self):
+        """O contrato mudou, e a mudança é o conserto do buraco de 9 minutos.
 
-        r = aula.iniciar("curso-de-teste", "aula de teste")
-        print(f"\n   {r}")
-        self.assertIn("Gravando", r)
+        Antes: descartava o áudio enquanto ele falava — a voz não entrava, e
+        junto com ela ia embora o pedaço da AULA que tocava naquele momento.
+        Agora: grava tudo e marca o intervalo. A voz dele está no wav (de
+        propósito, para poder conferir) e é filtrada na transcrição, por
+        timestamp — onde a decisão é reversível.
+        """
+        import json
+
+        from tools import curso, voz_local
+
+        aula.iniciar("curso-de-teste", "filtro")
         self.pasta = aula._estado["pasta"]
+        time.sleep(0.6)   # margem para o primeiro bloco entrar
 
-        # 1) o "professor": isto TEM que aparecer.
-        voz_local.falar("O professor está explicando a retenção do vídeo.",
-                        economico=True)
-        # A fala acima passou por voz_local, que pausa a captura — para simular
-        # o VÍDEO (que não pausa nada) o áudio precisa sair com a captura ativa.
-        # Então tocamos de novo sem passar pelo pausador.
-        aula.retomar() if aula._silenciado else None
         _tocar_direto("O professor está explicando a retenção do vídeo.")
-
-        time.sleep(0.8)
-
-        # 2) o OMEGA respondendo: isto NÃO pode aparecer.
+        time.sleep(0.4)
+        # Esta passa por voz_local, que marca o intervalo.
         voz_local.falar("Batata frita com abacaxi e guarda-chuva roxo.",
                         economico=True)
-        time.sleep(0.8)
+        time.sleep(0.4)
+        _tocar_direto("E agora o professor volta a falar do canal.")
+        time.sleep(0.4)
+        aula.parar()
 
-        fim = aula.parar()
-        print(f"   {fim}")
+        marcados = json.loads(
+            (self.pasta / "falas-do-omega.json").read_text(encoding="utf-8"))
+        print(f"\n   intervalos meus: {marcados}")
+        self.assertTrue(marcados, "não marcou quando eu falei")
 
-        wav = self.pasta / "audio.wav"
-        self.assertTrue(wav.exists(), "não gravou arquivo")
-        audio = transcritor.ler_wav_16k(wav)
-        segundos = len(audio) / 2 / 16000
-        print(f"   gravou {segundos:.1f}s")
-        self.assertGreater(segundos, 1.0, "gravou quase nada")
+        curso.transcrever_aula(self.pasta)
+        texto = (self.pasta / "transcricao.md").read_text(encoding="utf-8").lower()
+        print(f"   transcrição: '{' '.join(texto.split())[:110]}'")
 
-        texto = transcritor.transcrever(audio).lower()
-        print(f"   transcrição: '{texto[:90]}'")
-
-        # "professor", e não "retenção": o Whisper já devolveu "detenção" aqui,
-        # e o que este teste mede é se o ÁUDIO foi gravado — não a grafia. Um
-        # teste que quebra por uma letra vira ruído e acaba sendo ignorado.
-        self.assertIn("professor", texto, "não gravou o áudio do 'vídeo'")
-        for palavra in ("abacaxi", "guarda-chuva", "batata"):
+        self.assertIn("professor", texto, "perdeu o áudio da aula")
+        for palavra in ("abacaxi", "guarda-chuva"):
             self.assertNotIn(
                 palavra, texto,
-                f"a voz do OMEGA ('{palavra}') entrou na gravação da aula")
+                f"minha voz ('{palavra}') vazou para a transcrição da aula")
+
+    def test_nao_perde_aula_quando_o_omega_fala(self):
+        """O defeito que custou 9 minutos de uma aula de 25.
+
+        A primeira versão DESCARTAVA o áudio enquanto o OMEGA falava, para não
+        sujar a transcrição. No uso real, cada pergunta do Samuel comeu um
+        pedaço da aula e ele não tinha como saber. Agora grava sempre e marca
+        o intervalo — a limpeza vai para a transcrição, onde é reversível.
+        """
+        import json
+
+        aula.iniciar("curso-de-teste", "perda")
+        self.pasta = aula._estado["pasta"]
+        inicio = time.time()
+        time.sleep(1.0)
+        aula.pausar()
+        time.sleep(2.0)          # o OMEGA "falando" por 2 s
+        aula.retomar()
+        time.sleep(1.0)
+        relogio = time.time() - inicio
+        aula.parar()
+
+        gravado = len(transcritor.ler_wav_16k(self.pasta / "audio.wav")) / 2 / 16000
+        print(f"\n   relógio {relogio:.1f}s · gravado {gravado:.1f}s")
+        self.assertGreater(gravado, relogio - 1.2,
+                           "ainda está descartando o áudio da aula")
+
+        marcados = json.loads(
+            (self.pasta / "falas-do-omega.json").read_text(encoding="utf-8"))
+        self.assertTrue(marcados, "não marcou quando eu falei")
+        inicio_m, fim_m = marcados[0]
+        self.assertGreater(fim_m - inicio_m, 1.0,
+                           "o intervalo marcado não bate com os 2 s de fala")
 
     def test_buffer_recente_tem_o_que_transcrever(self):
         aula.iniciar("curso-de-teste", "buffer")
@@ -228,6 +268,10 @@ class TestGravacaoReal(unittest.TestCase):
 
         avisos = []
         original = mod.PICO_MINIMO
+        # Limiar impossível: com loopback qualquer som do Windows entra na
+        # captura, e o teste passaria a depender de a sala estar em silêncio.
+        # O que se mede aqui é o VIGIA estar ligado, não o ambiente.
+        mod.PICO_MINIMO = 10 ** 9
         mod._parar.clear()
         try:
             # Com nada tocando, os 12 s do vigia viram 1 s para o teste.
