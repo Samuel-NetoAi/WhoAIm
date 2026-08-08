@@ -51,6 +51,10 @@ Suas capacidades reais são as ferramentas:
   um pedido de PRODUÇÃO — "narre a pesquisa" é ler o que já existe, jamais
   gerar roteiro novo. Na dúvida entre ler e produzir, pergunte.
 - parar_leitura: interrompe a leitura em curso.
+- gravar_aula: começa, para e consulta a gravação da aula do curso. Use
+  sempre que o senhor mandar iniciar ou encerrar, dito de qualquer jeito.
+  NUNCA diga que parou sem chamar a ferramenta — e se ele perguntar se a aula
+  foi gravada, consulte 'situacao' em vez de responder de memória.
 - trecho_recente: transcreve o último minuto e meio da AULA que está sendo
   gravada. Use quando o senhor perguntar o que o professor acabou de dizer,
   ou pedir para explicar/repetir o que passou agora no vídeo.
@@ -275,6 +279,29 @@ TOOLS = [
     },
     {
         "type": "function",
+        "name": "gravar_aula",
+        "description": (
+            "Controla a gravação da aula do curso. 'iniciar' começa a gravar "
+            "o som do PC e a tirar print da tela; 'parar' encerra e deixa a "
+            "aula pronta para processar; 'situacao' diz se está gravando e há "
+            "quanto tempo. Use SEMPRE que o senhor mandar começar ou parar a "
+            "aula, de qualquer jeito que ele diga — 'pode parar de gravar', "
+            "'a aula acabou', 'encerra isso aí'. NUNCA responda que parou sem "
+            "chamar esta ferramenta: quem grava é ela, não você."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "acao": {"type": "string",
+                         "enum": ["iniciar", "parar", "situacao"]},
+                "titulo": {"type": "string",
+                           "description": "Nome da aula, só para 'iniciar'."},
+            },
+            "required": ["acao"],
+        },
+    },
+    {
+        "type": "function",
         "name": "trecho_recente",
         "description": (
             "Transcreve o último minuto e meio da AULA que está sendo gravada "
@@ -370,6 +397,18 @@ def make_tool_executor(ui):
 
         return curso.avaliar(args.get("proposta") or "")
 
+    def gravar_aula(args: dict) -> str:
+        from tools import aula
+
+        acao = (args.get("acao") or "situacao").strip()
+        if acao == "iniciar":
+            return aula.iniciar(aula.curso_atual(),
+                                (args.get("titulo") or "").strip() or "aula sem nome",
+                                avisar=ui.write_log)
+        if acao == "parar":
+            return aula.parar()
+        return aula.situacao()
+
     def trecho_recente(_args: dict) -> str:
         from tools import aula, transcritor
 
@@ -392,6 +431,7 @@ def make_tool_executor(ui):
         "apagar": apagar,
         "conferir": conferir,
         "trecho_recente": trecho_recente,
+        "gravar_aula": gravar_aula,
         "avaliar_seo": avaliar_seo,
         "tendencias": tendencias,
         "ler": ler,

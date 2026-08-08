@@ -80,7 +80,7 @@ CAMINHO_ATE_O_ARQUIVO: dict[str, tuple[tuple[str, ...], ...]] = {
 }
 
 _estado: dict = {"playwright": None, "contexto": None,
-                 "navegador": ""}
+                 "navegador": "", "pagina": None}
 _trava = threading.Lock()
 
 
@@ -113,16 +113,20 @@ def disponivel() -> bool:
 # É limitação do Opera com automação. O Samuel pode continuar usando o GX
 # normalmente: a gravação de aula e a captura de tela não dependem de qual
 # navegador é, só do que sai no som e do que está na tela.
-# BRAVE FUNCIONA — testado: lançou e navegou em example.com, no upload do
-# YouTube e no próprio Trends. Fica depois do Chrome só porque o Brave bloqueia
-# rastreador por padrão, e formulário de upload de rede social é o tipo de
-# página onde um bloqueio pode esconder um botão. Se preferir o Brave, ponha
-# `"navegador": "brave"` no config.
+# BRAVE PRIMEIRO, por escolha do Samuel — ele prefere Brave e Opera ao Chrome,
+# e o Opera não serve. Testado: lança e navega em example.com, no upload do
+# YouTube e no Trends.
+#
+# A ressalva que eu tinha (o Brave bloqueia rastreador por padrão, e isso pode
+# esconder um botão em formulário de upload) continua de pé — é por isso que
+# `preparar_postagem` tira print quando não acha o campo de arquivo. Se algum
+# dia uma rede quebrar só no Brave, `"navegador": "chrome"` no config resolve
+# sem mexer em código.
 NAVEGADORES = (
-    (r"C:\Program Files\Google\Chrome\Application\chrome.exe", "Chrome"),
-    (r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe", "Chrome"),
     (r"C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe", "Brave"),
     (r"C:\Program Files (x86)\BraveSoftware\Brave-Browser\Application\brave.exe", "Brave"),
+    (r"C:\Program Files\Google\Chrome\Application\chrome.exe", "Chrome"),
+    (r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe", "Chrome"),
     (r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe", "Edge"),
     (r"C:\Program Files\Microsoft\Edge\Application\msedge.exe", "Edge"),
 )
@@ -185,9 +189,28 @@ def _abrir_contexto():
     return contexto
 
 
-def _ir_para(url: str):
+def _nossa_pagina():
+    """A aba que o OMEGA usa — guardada, não adivinhada.
+
+    O Brave abre abas próprias (boas-vindas, nova aba), então `pages[0]` e
+    `pages[-1]` deixam de ser a mesma coisa: o print saía de um `about:blank`
+    enquanto a navegação acontecia noutra aba. Com o Chrome isso passava
+    despercebido porque só havia uma.
+    """
     contexto = _abrir_contexto()
+    pagina = _estado.get("pagina")
+    try:
+        if pagina is not None and not pagina.is_closed():
+            return pagina
+    except Exception:  # noqa: BLE001 — página morta se comporta como ausente
+        pass
     pagina = contexto.pages[0] if contexto.pages else contexto.new_page()
+    _estado["pagina"] = pagina
+    return pagina
+
+
+def _ir_para(url: str):
+    pagina = _nossa_pagina()
     pagina.goto(url, wait_until="domcontentloaded", timeout=60000)
     pagina.bring_to_front()
     return pagina
@@ -339,7 +362,8 @@ def ver(ui=None) -> str:
         contexto = _estado["contexto"]
         if contexto is None or not contexto.pages:
             return "Não estou com nenhuma página aberta."
-        pagina = contexto.pages[-1]
+        # A NOSSA aba, não a última que o navegador abriu.
+        pagina = _estado.get("pagina") or contexto.pages[0]
         try:
             endereco = pagina.url
         except Exception:  # noqa: BLE001
@@ -358,5 +382,5 @@ def fechar() -> str:
                 _estado["playwright"].stop()
         except Exception:  # noqa: BLE001
             pass
-        _estado.update({"playwright": None, "contexto": None})
+        _estado.update({"playwright": None, "contexto": None, "pagina": None})
     return "Navegador fechado."

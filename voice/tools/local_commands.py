@@ -216,6 +216,14 @@ _FIM_DE_AULA = ("parar", "para", "pare", "terminar", "termina", "acabou",
                 "encerrar", "encerra", "fim", "chega")
 
 
+def _e_fim_de_aula(baixo: str) -> bool:
+    """"pode parar de gravar a aula 1" tem que encerrar tanto quanto "parar aula"."""
+    palavras = [_norm(p) for p in baixo.split()]
+    if not any(p in ("aula", "aulas", "gravacao", "gravando") for p in palavras):
+        return False
+    return any(p in _FIM_DE_AULA for p in palavras)
+
+
 def _e_pedido_de_aula(baixo: str) -> bool:
     palavras = [_norm(p) for p in baixo.split()]
     if not any(p in ("aula", "aulas", "curso") for p in palavras):
@@ -578,8 +586,12 @@ def handle(text: str, ui) -> str | None:
         return _aula.definir_curso(
             re.sub(r"^(novo )?curso\s*", "", raw, flags=re.I))
 
-    if low in ("parar aula", "para a aula", "terminar aula", "acabou a aula",
-               "fim da aula", "encerrar aula"):
+    # Encerrar também tem que aceitar fala natural. Isto era uma lista de
+    # frases EXATAS, e o Samuel disse "pode parar de gravar a aula 1" — que
+    # não casava com nenhuma delas. A aula ficou gravando enquanto ele
+    # repetia o pedido de quatro formas diferentes. Eu já tinha corrigido o
+    # lado de ABRIR e deixei o de FECHAR com o mesmo defeito.
+    if _e_fim_de_aula(low):
         from . import aula as _aula
 
         return _aula.parar()

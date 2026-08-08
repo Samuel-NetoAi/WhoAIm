@@ -84,6 +84,49 @@ class TestFalaNatural(unittest.TestCase):
                       "quero ver a pesquisa da Medusa"):
             self.assertFalse(_e_pedido_de_aula(frase.lower()), frase)
 
+    def test_encerra_como_ele_realmente_pediu(self):
+        """Do log de uso real: ele disse isto QUATRO vezes e nada parou.
+
+        `parar aula` era uma lista de frases EXATAS. "pode parar de gravar a
+        aula 1" não casava com nenhuma, a aula seguiu gravando, e ele repetiu
+        o pedido de quatro formas diferentes. Eu tinha consertado o lado de
+        ABRIR e deixado o de FECHAR com o mesmo defeito.
+        """
+        from tools.local_commands import _e_fim_de_aula
+
+        for frase in ("pode parar de gravar a aula 1",
+                      "Ômega, pode parar de gravar a aula 1.",
+                      "a aula 1 acabou de acabar",
+                      "encerra a gravação",
+                      "parar aula",
+                      "terminar a aula agora"):
+            self.assertTrue(_e_fim_de_aula(frase.lower()), frase)
+
+    def test_nao_encerra_por_engano(self):
+        from tools.local_commands import _e_fim_de_aula
+
+        for frase in ("vamos começar a assistir a aula",
+                      "me mostra a pesquisa da Medusa",
+                      "parar",                      # é o 'parar' da LEITURA
+                      "você parou de gravar?"):     # pergunta, não ordem
+            self.assertFalse(_e_fim_de_aula(frase.lower()), frase)
+
+    def test_o_modelo_tem_como_parar_sozinho(self):
+        """Quando o casamento por palavra falha, o Gemini precisa conseguir.
+
+        No log real ele respondeu de imaginação ("não estamos falando de
+        projeto...") porque não havia ferramenta nenhuma para a gravação.
+        """
+        import sys as _s
+        _s.argv = ["t"]
+        import main
+
+        nomes = [x["name"] for x in main.TOOLS]
+        self.assertIn("gravar_aula", nomes)
+        ferramenta = next(x for x in main.TOOLS if x["name"] == "gravar_aula")
+        acoes = ferramenta["parameters"]["properties"]["acao"]["enum"]
+        self.assertEqual(sorted(acoes), ["iniciar", "parar", "situacao"])
+
     def test_nao_reabre_quando_ele_manda_parar(self):
         """'parar a aula' contém 'aula': sem cuidado, abriria outra gravação."""
         from tools.local_commands import _e_pedido_de_aula

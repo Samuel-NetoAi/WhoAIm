@@ -156,18 +156,45 @@ def _e_mixagem(nome: str) -> bool:
     return "mixagem" in n or "stereo mix" in n or "what u hear" in n
 
 
+# A ORDEM AQUI NÃO É ESTÉTICA. A mesma Mixagem estéreo aparece uma vez por API
+# de áudio, e escolher a primeira que surgir é loteria: numa execução saiu a
+# MME (funcionou), na seguinte saiu a WDM-KS e a captura morreu com
+# "Invalid device [PaErrorCode -9996]".
+#
+# WDM-KS fica FORA de propósito. Ela enumera o pino de hardware direto, então
+# a Mixagem aparece ali MESMO DESABILITADA no Windows — é uma presença que
+# mente. Se ela é a única que resta, o dispositivo está desligado, e o certo é
+# dizer isso em vez de tentar abrir e falhar sem explicação.
+_APIS_BOAS = ("MME", "WASAPI", "DirectSound")
+
+
 def _dispositivo_do_pc() -> tuple[int, int, int] | None:
     """(índice, taxa, canais) da entrada que ouve o que TOCA no PC.
 
     Procura a Mixagem estéreo pelo nome, em português e em inglês — o mesmo
     driver Realtek aparece com rótulo traduzido conforme o idioma do Windows.
     """
+    apis = [a["name"] for a in sd.query_hostapis()]
+    achados: list[tuple[int, int, int, str]] = []
     for i, d in enumerate(sd.query_devices()):
-        if d["max_input_channels"] <= 0:
+        if d["max_input_channels"] <= 0 or not _e_mixagem(d["name"]):
             continue
-        if _e_mixagem(d["name"]):
-            return i, int(d["default_samplerate"]), min(2, d["max_input_channels"])
+        achados.append((i, int(d["default_samplerate"]),
+                        min(2, d["max_input_channels"]), apis[d["hostapi"]]))
+
+    for preferida in _APIS_BOAS:
+        for i, taxa, canais, api in achados:
+            if preferida in api:
+                return i, taxa, canais
     return None
+
+
+def _so_existe_no_wdm() -> bool:
+    """A Mixagem está desabilitada no Windows? (só aparece no nível do driver)"""
+    apis = [a["name"] for a in sd.query_hostapis()]
+    vistas = {apis[d["hostapi"]] for d in sd.query_devices()
+              if d["max_input_channels"] > 0 and _e_mixagem(d["name"])}
+    return bool(vistas) and all("WDM-KS" in v for v in vistas)
 
 
 def _callback(indata, frames, tempo, status):
@@ -245,11 +272,18 @@ def iniciar(curso: str, titulo: str, avisar=None) -> str:
 
     achado = _dispositivo_do_pc()
     if achado is None:
+        # Distinguir "não existe" de "existe e está desligada" poupa o Samuel
+        # de procurar um dispositivo que está bem ali, só desabilitado.
+        desligada = _so_existe_no_wdm()
         return (
-            "Não achei a Mixagem estéreo nesta máquina. Ative em: botão direito "
-            "no ícone de som, Configurações de som, Mais opções, aba Gravação, "
-            "botão direito na área vazia, Mostrar dispositivos desativados, "
-            "e habilite a Mixagem estéreo."
+            ("A Mixagem estéreo existe nesta máquina mas está DESABILITADA no "
+             "Windows — por isso não consigo ouvir o que toca no PC. "
+             if desligada else
+             "Não achei a Mixagem estéreo nesta máquina. ")
+            + "Ative assim: botão direito no ícone de som, Configurações de "
+            "som, Mais opções de som, aba Gravação, botão direito na área "
+            "vazia, marque 'Mostrar dispositivos desativados', e habilite a "
+            "Mixagem estéreo."
         )
     indice, taxa, canais = achado
 
