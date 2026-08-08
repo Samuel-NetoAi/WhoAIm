@@ -105,38 +105,10 @@ def _gerar_audio(destino: Path) -> list[Path]:
     return caminhos
 
 
-def _ler_wav_16k(caminho: Path) -> bytes:
-    """Devolve PCM 16 bits mono a 16 kHz, reamostrando se necessário.
-
-    Feito com numpy porque o `audioop` da biblioteca padrão foi REMOVIDO no
-    Python 3.13, que é o desta máquina.
-    """
-    import numpy as np
-
-    with wave.open(str(caminho), "rb") as w:
-        canais, larg, taxa = w.getnchannels(), w.getsampwidth(), w.getframerate()
-        dados = w.readframes(w.getnframes())
-
-    if larg == 1:  # 8 bits é sem sinal, centrado em 128
-        amostras = (np.frombuffer(dados, np.uint8).astype(np.float32) - 128) * 256
-    elif larg == 2:
-        amostras = np.frombuffer(dados, np.int16).astype(np.float32)
-    else:
-        raise ValueError(f"{caminho.name}: {larg*8} bits por amostra não suportado")
-
-    if canais > 1:
-        amostras = amostras.reshape(-1, canais).mean(axis=1)
-
-    if taxa != 16000:
-        # Interpolação linear basta: é material de teste, não a trilha final.
-        n = int(round(len(amostras) * 16000 / taxa))
-        amostras = np.interp(
-            np.linspace(0, len(amostras) - 1, n),
-            np.arange(len(amostras)),
-            amostras,
-        )
-
-    return np.clip(amostras, -32768, 32767).astype(np.int16).tobytes()
+# A conversão mora em tools/transcritor.py: a captura do som do PC precisa da
+# mesma coisa, e duas cópias divergiriam. Este alias mantém o nome usado pelos
+# outros testes.
+from tools.transcritor import ler_wav_16k as _ler_wav_16k  # noqa: E402
 
 
 def main() -> int:

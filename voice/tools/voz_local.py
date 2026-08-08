@@ -79,6 +79,15 @@ def falar(texto: str, economico: bool = False, log=None) -> None:
     if not texto:
         return
     log = log or (lambda _m: None)
+    # Se uma aula está sendo gravada, ela captura o que sai pelos alto-falantes
+    # — inclusive isto. Pausar evita que a voz do OMEGA entre na transcrição da
+    # aula e depois vire "regra do curso".
+    try:
+        from . import aula
+
+        aula.pausar()
+    except Exception:  # noqa: BLE001
+        aula = None
     with _trava:
         try:
             if not economico and _pela_elevenlabs(texto, log):
@@ -89,3 +98,6 @@ def falar(texto: str, economico: bool = False, log=None) -> None:
             motor.stop()
         except Exception as e:  # noqa: BLE001
             log(f"SYS: voz indisponível ({str(e)[:60]}) — sigo por texto.")
+        finally:
+            if aula is not None:
+                aula.retomar()

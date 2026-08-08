@@ -153,6 +153,9 @@ def transcrever(audio_int16: bytes, viesar: bool = True) -> str:
             from . import contexto_fala
 
             hotwords = contexto_fala.hotwords() or None
+            # INITIAL_PROMPT hoje é None de propósito — ver o comentário longo
+            # em contexto_fala.py. Segue sendo lido para quem quiser voltar a
+            # experimentar, mas com a advertência de lá.
             prompt = contexto_fala.INITIAL_PROMPT
         except Exception:  # noqa: BLE001 — sem viés é pior, mas surdo é pior ainda
             pass
@@ -242,6 +245,49 @@ class DetectorDeFala:
         self._falando = False
         self._silencio = 0.0
         self._duracao = 0.0
+
+
+def para_16k_mono(amostras: np.ndarray, taxa: int, canais: int) -> bytes:
+    """Converte áudio cru para o formato que o Whisper aceita.
+
+    A placa entrega 48 kHz em estéreo; o modelo quer 16 kHz mono. Fica aqui,
+    e não no teste onde nasceu, porque a captura do som do PC (tools/aula.py)
+    precisa exatamente disto — e duas cópias de uma conversão de áudio é
+    garantia de divergirem num detalhe silencioso.
+
+    Interpolação linear em vez de um reamostrador de verdade: a diferença é
+    inaudível para fala em 16 kHz, e não vale uma dependência nova.
+    """
+    if canais > 1:
+        amostras = amostras.reshape(-1, canais).mean(axis=1)
+    if taxa != TAXA:
+        n = int(round(len(amostras) * TAXA / taxa))
+        amostras = np.interp(
+            np.linspace(0, len(amostras) - 1, n),
+            np.arange(len(amostras)),
+            amostras,
+        )
+    return np.clip(amostras, -32768, 32767).astype(np.int16).tobytes()
+
+
+def ler_wav_16k(caminho: Path) -> bytes:
+    """Lê um WAV qualquer e devolve PCM 16 bits mono a 16 kHz.
+
+    Feito com numpy porque o `audioop` da biblioteca padrão foi REMOVIDO no
+    Python 3.13, que é o desta máquina.
+    """
+    with wave.open(str(caminho), "rb") as w:
+        canais, larg, taxa = w.getnchannels(), w.getsampwidth(), w.getframerate()
+        dados = w.readframes(w.getnframes())
+
+    if larg == 1:  # 8 bits é sem sinal, centrado em 128
+        amostras = (np.frombuffer(dados, np.uint8).astype(np.float32) - 128) * 256
+    elif larg == 2:
+        amostras = np.frombuffer(dados, np.int16).astype(np.float32)
+    else:
+        raise ValueError(f"{caminho.name}: {larg * 8} bits por amostra não suportado")
+
+    return para_16k_mono(amostras, taxa, canais)
 
 
 def salvar_wav(audio_int16: bytes, caminho: Path, taxa: int = TAXA) -> None:

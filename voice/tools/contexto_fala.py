@@ -8,16 +8,13 @@ depois tentava consertar o estrago com um dicionário de erros observados
 vez que o decoder escolheu "haiti é coisa", a informação de que era "IT A
 Coisa" já se perdeu.
 
-Duas alavancas, que o faster-whisper aplica no mesmo lugar (o slot `sot_prev`):
-
-- `hotwords`: a lista de palavras que provavelmente vão aparecer. Nomes das
-  criaturas em produção, o nome do assistente e os verbos de comando.
-- `initial_prompt`: uma frase de exemplo no registro certo, para o decoder
-  partir do domínio (produção de vídeo em português) e não do português geral.
+UMA alavanca: `hotwords`, a lista de palavras que provavelmente vão aparecer —
+nomes das criaturas em produção, o nome do assistente e os verbos de comando.
+(Havia também um `initial_prompt`; foi medido, não fazia diferença, e era
+perigoso. O porquê está logo abaixo, junto da constante.)
 
 TETO DE TOKENS: o faster-whisper corta `hotwords` em `max_length // 2` tokens
-*sem avisar*, e ainda divide esse espaço com o `initial_prompt`. Uma lista que
-cresce sozinha com o número de pastas encostaria nesse teto e passaria a
+*sem avisar*. Uma lista que cresce sozinha com o número de pastas encostaria nesse teto e passaria a
 truncar em silêncio — as últimas criaturas simplesmente deixariam de ser
 enviadas, e ninguém descobriria. Por isso o orçamento aqui é explícito e o
 excesso é registrado, não engolido.
@@ -31,23 +28,36 @@ import unicodedata
 from .projetos import listar_pastas
 from .vocabulario import APELIDOS, CORRECOES
 
-# O orçamento real é `max_length // 2` = 224 tokens, dividido com o
-# initial_prompt (~35). Sobra folga, mas não a gastamos toda: lista longa
-# demais dilui o viés em vez de reforçá-lo — a literatura é explícita em que
-# biasing por prompt degrada com listas grandes.
+# O orçamento real é `max_length // 2` = 224 tokens. Antes dividíamos com o
+# initial_prompt; sem ele sobra tudo, mas não gastamos: lista longa demais
+# dilui o viés em vez de reforçá-lo — a literatura é explícita em que biasing
+# por prompt degrada com listas grandes.
 MAX_TOKENS_HOTWORDS = 150
 
 # ~1 token a cada 3,5 caracteres em português. Estimativa suficiente para um
 # teto de segurança — o custo de errar para menos é zero.
 _CHARS_POR_TOKEN = 3.5
 
-# O registro em que o Samuel realmente fala com o OMEGA. Não é enfeite: o
-# Whisper decodifica condicionado a este texto, então uma frase no domínio
-# certo puxa a transcrição para o vocabulário certo.
-INITIAL_PROMPT = (
-    "Ômega, me mostra a pesquisa da Medusa. Ômega, monta o vídeo do Cthulhu. "
-    "Ômega, lê o roteiro e as cenas da criatura."
-)
+# NÃO EXISTE MAIS INITIAL_PROMPT, e a razão vale ser lida antes de alguém
+# tentar trazê-lo de volta.
+#
+# Havia aqui uma frase de exemplo — "Ômega, monta o vídeo do Cthulhu..." — para
+# ambientar o decoder. Duas descobertas a mataram:
+#
+# 1. Ela não fazia nada. Medido com as 12 frases do test_escuta:
+#       hotwords + prompt de comando   36/36
+#       hotwords + prompt descritivo   36/36
+#       hotwords SEM prompt            36/36
+#       nada                           32/36
+#    Quem carrega o resultado são os `hotwords`; o prompt era decoração.
+#
+# 2. Ela era PERIGOSA. O Whisper ecoa o initial_prompt quando o áudio está
+#    ruim, e apareceu de fato: numa gravação onde ninguém disse nada parecido,
+#    a transcrição saiu "ômega, monta o vídeo do cthulhu". Como a frase era um
+#    COMANDO VÁLIDO, um eco desses dispara um render que ninguém pediu.
+#
+# Benefício medido zero, risco de executar comando fantasma: sai.
+INITIAL_PROMPT = None
 
 # Pastas dentro de Criaturas/ que NÃO são criaturas. Sem isto elas comem o
 # orçamento e, pior, enviesam a transcrição para palavras de ferramenta:

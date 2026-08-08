@@ -110,6 +110,18 @@ AJUDA = """# Comandos (funcionam sem créditos)
 - **`ver navegador`** — print da tela do navegador aqui dentro, para você
   acompanhar sem procurar a janela do Chrome
 
+**Curso** (assistir junto e virar regra do canal)
+- **`assistir <nome da aula>`** — grava o som do PC e tira print da tela;
+  **`parar aula`** encerra
+- **`guarda essa tela`** — print na hora, quando aparecer algo que importa
+- durante a aula: *"Ômega, o que ele acabou de dizer?"*
+- **`processar curso`** — transcreve e extrai as regras *(demora; avisa no fim)*
+- **`revisar regras`** — mostra as regras propostas com a aula e o minuto;
+  **`aprovar todas`** / **`aprovar 1 3`** / **`descartar 2`**
+- **`curso <nome>`** — troca o curso atual
+- Depois de aprovadas, elas guiam o SEO do canal — e ele **discorda** de você
+  citando a aula quando você propuser algo contra
+
 **Apagar** (sempre em dois passos, e vai para a lixeira)
 - **`apagar projeto <criatura>`** → depois **`confirmar`** ou **`cancelar`**
 
@@ -447,6 +459,70 @@ def handle(text: str, ui) -> str | None:
     # nunca seja interpretado como outra coisa.
     if low in ("parar", "para", "chega", "silencio", "silêncio", "cala"):
         return _leitura.parar()
+
+    # ----- processar o curso e aprovar as regras -----
+    if low in ("processar curso", "processa curso", "processar as aulas",
+               "transcrever curso", "processar aulas"):
+        from . import curso as _curso
+
+        return _curso.processar(ui)
+
+    if low in ("cancelar curso", "parar processamento", "cancelar processamento"):
+        from . import curso as _curso
+
+        return _curso.cancelar()
+
+    if low in ("andamento do curso", "como vai o curso", "situacao do curso",
+               "situação do curso", "status do curso"):
+        from . import curso as _curso
+
+        return _curso.andamento()
+
+    if low in ("revisar regras", "revisa as regras", "ver regras",
+               "regras do curso", "revisar curso"):
+        from . import curso as _curso
+
+        return _curso.revisar(ui)
+
+    if low.startswith(("aprovar ", "aprova ", "descartar ", "descarta ",
+                       "aprovar", "descartar")):
+        from . import curso as _curso
+
+        return _curso.decidir(raw)
+
+    # ----- assistir aula do curso junto com ele -----
+    if low.startswith(("assistir ", "assiste ", "gravar aula", "grava aula",
+                       "comecar aula", "começar aula", "nova aula")):
+        from . import aula as _aula
+
+        titulo = re.sub(
+            r"^(assistir|assiste|gravar aula|grava aula|comecar aula|"
+            r"começar aula|nova aula)\s*", "", raw, flags=re.I).strip()
+        return _aula.iniciar(_aula.curso_atual(), titulo or "aula sem nome")
+
+    if low.startswith(("curso ", "novo curso ")) and "processar" not in low:
+        from . import aula as _aula
+
+        return _aula.definir_curso(
+            re.sub(r"^(novo )?curso\s*", "", raw, flags=re.I))
+
+    if low in ("parar aula", "para a aula", "terminar aula", "acabou a aula",
+               "fim da aula", "encerrar aula"):
+        from . import aula as _aula
+
+        return _aula.parar()
+
+    if low in ("guarda essa tela", "guarde essa tela", "salva essa tela",
+               "print", "printa", "guarda a tela", "anota essa tela"):
+        from . import aula as _aula
+
+        return _aula.print_agora()
+
+    if low in ("como esta a aula", "como está a aula", "situacao da aula",
+               "situação da aula"):
+        from . import aula as _aula
+
+        return _aula.situacao()
 
     # Abortar a pesquisa/produção em curso. Vem cedo para que um "cancelar"
     # dito no meio de um trabalho longo não seja lido como outra coisa.

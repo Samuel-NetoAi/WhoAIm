@@ -41,6 +41,8 @@ import numpy as np
 import sounddevice as sd
 import websockets
 
+from tools import aula as _aula
+
 URL = ("wss://generativelanguage.googleapis.com/ws/"
        "google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent")
 
@@ -283,7 +285,9 @@ class LiveEngine:
                 self._saida.get_nowait()
             except queue.Empty:
                 break
-        self._falando.clear()
+        if self._falando.is_set():
+            self._falando.clear()
+            _aula.retomar()
 
     def _tocar(self) -> None:
         """Thread que toca o áudio do modelo assim que ele chega."""
@@ -300,12 +304,16 @@ class LiveEngine:
                 except queue.Empty:
                     if self._falando.is_set():
                         self._falando.clear()
+                        _aula.retomar()
                         if not self.ui.muted:
                             self.ui.set_state("LISTENING")
                     continue
                 if not self._falando.is_set():
                     self._falando.set()
                     self.ui.set_state("SPEAKING")
+                    # A aula grava o que sai pelos alto-falantes: sem pausar,
+                    # a voz do modelo entra na transcrição do curso.
+                    _aula.pausar()
                 try:
                     stream.write(pedaco)
                 except Exception:  # noqa: BLE001

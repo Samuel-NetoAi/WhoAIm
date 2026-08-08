@@ -100,9 +100,15 @@ def _acompanhar_render(pid: str, job_id: str, rotulo: str, tipo: str) -> None:
 
 
 def _studio_alive() -> bool:
+    """O Studio está no ar E respondendo a API?
+
+    Antes bastava a porta responder QUALQUER coisa. Outro programa ocupando a
+    3001 passava por Studio, e o erro só aparecia depois, como um traceback de
+    404 no meio de um comando falado. Conferir o status é o que separa "o
+    Studio está de pé" de "tem alguém nessa porta".
+    """
     try:
-        requests.get(f"{STUDIO_URL}/api/projects", timeout=3)
-        return True
+        return requests.get(f"{STUDIO_URL}/api/projects", timeout=3).ok
     except requests.RequestException:
         return False
 
@@ -133,9 +139,19 @@ def _ensure_studio() -> str | None:
 
 
 def _get_projects() -> list[dict]:
-    r = requests.get(f"{STUDIO_URL}/api/projects", timeout=10)
-    r.raise_for_status()
-    return r.json().get("projects", [])
+    """Lista vazia quando o Studio não responde — nunca levanta.
+
+    Quem chama isto está atendendo um comando FALADO. Uma exceção aqui vira
+    "Falhou: 404 Client Error" na voz do OMEGA, em inglês e sem dizer o que
+    fazer. Lista vazia deixa quem chamou explicar em português.
+    """
+    try:
+        r = requests.get(f"{STUDIO_URL}/api/projects", timeout=10)
+        if not r.ok:
+            return []
+        return r.json().get("projects", [])
+    except (requests.RequestException, ValueError):
+        return []
 
 
 def _find_project(name: str) -> dict | None:

@@ -46,6 +46,14 @@ Suas capacidades reais são as ferramentas:
   um pedido de PRODUÇÃO — "narre a pesquisa" é ler o que já existe, jamais
   gerar roteiro novo. Na dúvida entre ler e produzir, pergunte.
 - parar_leitura: interrompe a leitura em curso.
+- trecho_recente: transcreve o último minuto e meio da AULA que está sendo
+  gravada. Use quando o senhor perguntar o que o professor acabou de dizer,
+  ou pedir para explicar/repetir o que passou agora no vídeo.
+- avaliar_seo: confere um título/descrição/plano de postagem contra as regras
+  do curso de YouTube que ele aprovou. Use SEMPRE que ele propuser um título
+  ou pedir opinião de SEO, mesmo sem citar o curso — foi para isso que ele
+  assistiu às aulas. Cite a aula e o minuto; se nenhuma regra cobrir o caso,
+  diga que o curso não falou disso em vez de opinar por conta própria.
 - apagar: remove projetos ou renders, SEMPRE em dois passos. Primeiro
   'preparar' (só mostra o que seria apagado), leia em voz alta o que será
   removido, e só chame 'confirmar' DEPOIS que o senhor confirmar de viva voz.
@@ -213,6 +221,41 @@ TOOLS = [
     },
     {
         "type": "function",
+        "name": "avaliar_seo",
+        "description": (
+            "Confere um título, descrição, thumbnail ou plano de postagem "
+            "contra as REGRAS DO CURSO de YouTube que o senhor aprovou. "
+            "Use SEMPRE que ele propuser um título/descrição, pedir opinião "
+            "sobre SEO, ou perguntar quando/como postar — mesmo que ele não "
+            "cite o curso. É para isso que ele assistiu às aulas: para você "
+            "lembrar do que ele esqueceu, e discordar quando for o caso. "
+            "Cite a aula e o minuto ao concordar ou discordar."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "proposta": {
+                    "type": "string",
+                    "description": "O título/descrição/plano que ele propôs.",
+                },
+            },
+            "required": ["proposta"],
+        },
+    },
+    {
+        "type": "function",
+        "name": "trecho_recente",
+        "description": (
+            "Transcreve o último minuto e meio da AULA que está sendo gravada "
+            "e devolve o texto. Use quando o senhor perguntar o que o "
+            "professor acabou de dizer, pedir para repetir, explicar ou "
+            "resumir o que passou agora. Responda com base NO TEXTO devolvido; "
+            "se vier vazio, diga que não pegou o trecho."
+        ),
+        "parameters": {"type": "object", "properties": {}},
+    },
+    {
+        "type": "function",
         "name": "conferir",
         "description": (
             "Consulta a internet AGORA para confirmar um fato pontual (uma "
@@ -284,12 +327,34 @@ def make_tool_executor(ui):
 
         return mod.parar()
 
+    def avaliar_seo(args: dict) -> str:
+        from tools import curso
+
+        return curso.avaliar(args.get("proposta") or "")
+
+    def trecho_recente(_args: dict) -> str:
+        from tools import aula, transcritor
+
+        if not aula.gravando():
+            return ("Não estou gravando aula nenhuma. Diga 'assistir <nome da "
+                    "aula>' antes de começar o vídeo.")
+        audio = aula.trecho_recente()
+        if len(audio) < 2 * 16000:  # menos de 1 segundo
+            return "Ainda não tenho áudio suficiente da aula."
+        ui.write_log("SYS: transcrevendo o trecho recente da aula...")
+        texto = transcritor.transcrever(audio)
+        if not texto:
+            return "Não consegui entender o trecho — talvez estivesse em silêncio."
+        return f"O QUE O PROFESSOR DISSE NOS ÚLTIMOS {len(audio)//2//16000}s:\n{texto}"
+
     impls = {
         "studio_control": studio_control,
         "pipeline_criatura": pipeline_criatura,
         "exibir": exibir,
         "apagar": apagar,
         "conferir": conferir,
+        "trecho_recente": trecho_recente,
+        "avaliar_seo": avaliar_seo,
         "ler": ler,
         "parar_leitura": parar_leitura,
     }
