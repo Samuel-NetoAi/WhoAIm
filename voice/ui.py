@@ -1204,6 +1204,9 @@ class MainWindow(QMainWindow):
     _img_sig    = pyqtSignal(str, str)
     _hud_sig    = pyqtSignal()
     _frente_sig = pyqtSignal()
+    # O WM_HOTKEY chega numa thread própria; tocar em widget de lá trava o
+    # Qt. O sinal atravessa para a thread da UI, como os demais aqui.
+    _atalho_sig = pyqtSignal()
 
     def __init__(self, face_path: str):
         super().__init__()
@@ -1283,6 +1286,14 @@ class MainWindow(QMainWindow):
         self._img_sig.connect(self._show_image)
         self._hud_sig.connect(self.show_hud)
         self._frente_sig.connect(self._trazer_para_frente)
+        self._atalho_sig.connect(self._ao_atalho_na_ui)
+        self._ao_atalho = None
+        self._tid_atalho = 0
+        # Soltar a tecla no fim: presa, ela some até o Windows reiniciar e a
+        # próxima execução do OMEGA não consegue registrá-la.
+        app = QApplication.instance()
+        if app is not None:
+            app.aboutToQuit.connect(self._encerrar_atalho)
 
         self._overlay: SetupOverlay | None = None
         self._ready = self._check_config()
@@ -1349,6 +1360,98 @@ class MainWindow(QMainWindow):
                 user32.AttachThreadInput(tid_ativa, tid_nossa, False)
         except Exception as e:  # noqa: BLE001 — foco é conveniência, não crítico
             print(f"[UI] foco forçado falhou: {e}")
+
+    # ---------- atalho global (Ctrl+Espaço) ----------
+    #
+    # Dizer "Ômega" é o certo quando ele está do outro lado da sala. Quando o
+    # Samuel está NO PC, é cerimônia: ele fala o nome, espera, e às vezes
+    # repete porque a palavra não foi reconhecida. A tecla não depende de
+    # reconhecimento nenhum — é o caminho que nunca erra.
+    #
+    # RegisterHotKey é global de verdade (funciona com a janela em segundo
+    # plano), ao contrário de um QShortcut, que só vale com a janela em foco.
+    # A mensagem WM_HOTKEY chega no laço de eventos do Qt, e por isso é
+    # colhida em `nativeEvent` — sem thread extra e sem laço paralelo.
+
+    # POR QUE UMA THREAD, E NÃO `nativeEvent`: a primeira versão sobrescrevia
+    # `nativeEvent` para colher o WM_HOTKEY. O Qt chama esse método para CADA
+    # mensagem do Windows — milhares por segundo —, e ali qualquer tropeço
+    # derruba o processo inteiro sem traceback. Foi o que aconteceu: o app
+    # morria com 0xC000041D e log vazio, o mesmo perfil do acidente do
+    # `setAlpha`. Registrar a tecla sem janela (`hwnd=NULL`) e ler as
+    # mensagens num laço próprio deixa o caminho quente do Qt intocado.
+
+    _ID_ATALHO = 0xA17A          # qualquer inteiro; só precisa ser nosso
+    _WM_HOTKEY = 0x0312
+    _MOD_CONTROL = 0x0002
+    _MOD_NOREPEAT = 0x4000       # segurar a tecla não dispara em rajada
+    _VK_SPACE = 0x20
+
+    def registrar_atalho_global(self, ao_disparar) -> bool:
+        """Liga Ctrl+Espaço. False = não deu (outro app já tomou a tecla)."""
+        self._ao_atalho = ao_disparar
+        if platform.system() != "Windows":
+            return False
+
+        import ctypes
+        import ctypes.wintypes
+
+        pronto = threading.Event()
+        estado = {"ok": False}
+
+        def laco():
+            user32 = ctypes.windll.user32
+            # hwnd = 0: a tecla fica registrada para a THREAD, e as mensagens
+            # chegam neste laço em vez de na fila da janela.
+            estado["ok"] = bool(user32.RegisterHotKey(
+                None, self._ID_ATALHO,
+                self._MOD_CONTROL | self._MOD_NOREPEAT, self._VK_SPACE))
+            self._tid_atalho = ctypes.windll.kernel32.GetCurrentThreadId()
+            pronto.set()
+            if not estado["ok"]:
+                return
+            msg = ctypes.wintypes.MSG()
+            while user32.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
+                if msg.message == self._WM_HOTKEY and msg.wParam == self._ID_ATALHO:
+                    try:
+                        self._atalho_sig.emit()
+                    except Exception:  # noqa: BLE001
+                        pass
+            user32.UnregisterHotKey(None, self._ID_ATALHO)
+
+        self._thread_atalho = threading.Thread(
+            target=laco, name="atalho-global", daemon=True)
+        self._thread_atalho.start()
+        pronto.wait(timeout=3)
+
+        if not estado["ok"]:
+            # Acontece de verdade: o Ctrl+Espaço é usado por trocadores de
+            # idioma e por IDEs. Falhar calado faria parecer defeito nosso.
+            self.write_log(
+                "SYS: Ctrl+Espaço já está em uso por outro programa — "
+                "continue chamando por 'Ômega'."
+            )
+        return estado["ok"]
+
+    def _ao_atalho_na_ui(self) -> None:
+        if self._ao_atalho:
+            self._ao_atalho()
+
+    def _encerrar_atalho(self) -> None:
+        """Solta a tecla. Sem isto ela fica presa até o Windows reiniciar."""
+        if platform.system() != "Windows" or not getattr(self, "_tid_atalho", 0):
+            return
+        try:
+            import ctypes
+
+            WM_QUIT = 0x0012
+            ctypes.windll.user32.PostThreadMessageW(
+                self._tid_atalho, WM_QUIT, 0, 0)
+            if getattr(self, "_thread_atalho", None):
+                self._thread_atalho.join(timeout=2)
+        except Exception:  # noqa: BLE001
+            pass
+        self._tid_atalho = 0
 
     def _toggle_fullscreen(self):
         if self.isFullScreen():
@@ -1546,6 +1649,7 @@ class MainWindow(QMainWindow):
         ("projetos", "todos os projetos"),
         ("progresso", "renders em curso"),
         ("voltar", "volta ao núcleo"),
+        ("Ctrl+Espaço", "fala sem dizer 'Ômega'"),
         ("— conteúdo —", None),
         ("pesquisa <nome>", "o que foi apurado"),
         ("roteiro <nome>", "a narração"),
@@ -1914,6 +2018,10 @@ class OmegaUI:
     def trazer_para_frente(self):
         """Traz a janela de volta — usado pelo gesto de duas palmas."""
         self._win._frente_sig.emit()
+
+    def registrar_atalho_global(self, ao_disparar) -> bool:
+        """Ctrl+Espaço fala com o OMEGA sem precisar dizer o nome."""
+        return self._win.registrar_atalho_global(ao_disparar)
 
     # Exibição de conteúdo no centro da tela (thread-safe via signals).
     def show_document(self, title: str, markdown_text: str):

@@ -56,6 +56,10 @@ NOTE_ALIASES = {
 
 AJUDA = """# Comandos (funcionam sem créditos)
 
+> **`Ctrl+Espaço` fala com o OMEGA sem dizer "Ômega".** Funciona de qualquer
+> programa, com a janela dele escondida. O nome continua valendo para quando
+> você está longe do PC — a tecla é para quando você está na frente dele.
+
 > **Fale as palavras em NEGRITO.** Elas foram escolhidas por serem
 > portuguesas e comuns — o reconhecimento de voz erra feio em palavra
 > estrangeira ("dossiê" já virou *torcedor*). As formas em inglês continuam

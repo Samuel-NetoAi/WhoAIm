@@ -114,6 +114,13 @@ class FreeEngine:
         self._ultima_fala = 0.0
 
         self.ui.on_text_command = self.processar_texto
+        # Ctrl+Espaço: a saída para quando o nome não é reconhecido. Não
+        # substitui o "Ômega" — ele continua servindo de longe —, mas quando o
+        # Samuel está na frente do PC a tecla nunca erra, e reconhecimento de
+        # fala erra sempre um pouco.
+        registrar = getattr(self.ui, "registrar_atalho_global", None)
+        if registrar:
+            registrar(self._ao_atalho_global)
         # Os comandos locais precisam falar (leitura de documentos em voz
         # alta); expomos a fala pela UI para não acoplar os dois módulos.
         self.ui.falar = self.falar
@@ -377,6 +384,27 @@ class FreeEngine:
             self.falar(f"Falhou: {str(e)[:120]}")
 
     # ---------- ouvidos (Vosk) ----------
+
+    def _ao_atalho_global(self) -> None:
+        """Ctrl+Espaço: abre a escuta sem exigir a palavra de ativação.
+
+        Também interrompe a leitura, pela mesma razão das palmas: o gesto
+        mais fácil de alcançar tem que ser o que faz ele calar a boca.
+        """
+        from tools import leitura as _leitura
+
+        if _leitura.lendo():
+            self.ui.write_log("SYS: Ctrl+Espaço — " + _leitura.parar())
+            return
+        if self.ui.muted:
+            # Mudo é uma decisão dele; a tecla avisa em vez de desfazer calada.
+            self.ui.write_log("SYS: Ctrl+Espaço — o microfone está mudo.")
+            return
+        self._abrir_janela()
+        self.ui.write_log(
+            f"SYS: Ctrl+Espaço — pode falar, sem dizer o nome "
+            f"({int(JANELA_CONVERSA)}s)."
+        )
 
     def _ao_bater_palmas(self) -> None:
         # Lendo? As palmas interrompem. É a saída física para calar uma
