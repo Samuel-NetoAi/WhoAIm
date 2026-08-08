@@ -67,3 +67,4 @@ voice/_prints/
 # Log de execução do app: contém a CONVERSA do Samuel (o OMEGA_LOG ecoa tudo).
 voice/_app.log
 voice/_app.err
+voice/_audio_fp/
