@@ -109,10 +109,22 @@ def _termos() -> list[str]:
             continue
         juntar(_nome_falado(pasta.name))
 
+    # O que o Samuel ensinou usando o OMEGA. Vem ANTES das listas escritas à
+    # mão: são as palavras que ele de fato diz e que ele mesmo viu darem
+    # errado — e a cauda desta lista é justamente o que morre no corte.
+    try:
+        from .aprendizado import aprendidos
+
+        for certo in aprendidos().values():
+            juntar(certo)
+    except Exception:  # noqa: BLE001
+        pass
+
     # Grafias corretas que já sabemos que ele erra. Só as formas certas: as
     # variantes erradas continuam em vocabulario.py, como rede de segurança.
     for correta in CORRECOES:
         juntar(correta)
+
     for grupo in APELIDOS:
         for a in grupo:
             juntar(a)

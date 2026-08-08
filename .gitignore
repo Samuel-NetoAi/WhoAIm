@@ -56,4 +56,7 @@ voice/nao-entendidas.txt
 # (gravacoes). Nenhum dos dois é código, e a voz dele não vai para o GitHub.
 voice/_audio_teste/
 voice/gravacoes/
+# O diario de falas contem o que o Samuel DIZ -- fica na maquina dele.
+# Ja o vocabulario aprendido sao so pares de palavras, e vale versionar:
+# assim o que ele ensina num PC vale no outro.
 voice/aprendizado.jsonl

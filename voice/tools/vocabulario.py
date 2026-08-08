@@ -57,9 +57,27 @@ def _normalizar(texto: str) -> str:
     return re.sub(r"\s+", " ", sem_acento).strip()
 
 
-for _correto, _variantes in CORRECOES.items():
-    for _v in _variantes:
-        _MAPA[_normalizar(_v)] = _correto
+def recarregar() -> None:
+    """(Re)monta o mapa: a lista fixa daqui MAIS o que o Samuel ensinou.
+
+    As lições dele vêm por último de propósito — quem corrige o assistente
+    ao vivo sabe mais sobre a própria fala do que uma lista escrita meses
+    antes. Ver `tools/aprendizado.py`.
+    """
+    _MAPA.clear()
+    for correto, variantes in CORRECOES.items():
+        for v in variantes:
+            _MAPA[_normalizar(v)] = correto
+    try:
+        from .aprendizado import aprendidos
+
+        for errado, certo in aprendidos().items():
+            _MAPA[_normalizar(errado)] = certo
+    except Exception:  # noqa: BLE001 — sem as lições, a lista fixa ainda vale
+        pass
+
+
+recarregar()
 
 
 # Seres que têm mais de um nome. Sem isto o OMEGA pesquisa "Pennywise" e

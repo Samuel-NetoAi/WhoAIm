@@ -71,6 +71,20 @@ MEMORIA_EXPIRA = 900.0
 # própria voz — basta a palavra aparecer.
 _E_PARADA = re.compile(r'\b(parar?|pare|chega|silencio|cale|cala)\b')
 
+# Frases que o OMEGA usa quando NÃO resolveu. É por elas que o diário de
+# aprendizado sabe o que falhou — sem isto, "não entendi qual projeto" seria
+# registrado como sucesso e a lista de coisas a ensinar nunca cresceria.
+_NAO_RESOLVEU = (
+    "não entendi", "nao entendi", "não sei", "nao sei", "falhou",
+    "não consegui", "nao consegui", "recusou", "desconhecid",
+    "não encontrei", "nao encontrei", "não existe", "nao existe",
+)
+
+
+def _deu_certo(resposta: str) -> bool:
+    baixa = (resposta or "").lower()
+    return bool(baixa) and not any(m in baixa for m in _NAO_RESOLVEU)
+
 def _sem_acento(texto: str) -> str:
     """O Whisper devolve acentuado ("Ômega"); a lista está sem acento."""
     return "".join(
@@ -368,6 +382,8 @@ class FreeEngine:
         if not texto:
             return
         self.ui.set_state("THINKING")
+        bruta = getattr(self, "_ultima_bruta", "") or texto
+        self._ultima_bruta = ""
         try:
             if self.local_handler:
                 resposta = self.local_handler(texto, self.ui)
@@ -377,11 +393,23 @@ class FreeEngine:
                     # isto o "e o roteiro dela?" seguinte cairia num modelo que
                     # nunca ouviu falar da Medusa.
                     self._lembrar(texto, resposta)
+                    self._anotar(bruta, texto, "local", _deu_certo(resposta))
                     self.falar(resposta)
                     return
-            self.falar(self._perguntar_gemini(texto))
+            resposta = self._perguntar_gemini(texto)
+            self._anotar(bruta, texto, "gemini", _deu_certo(resposta))
+            self.falar(resposta)
         except Exception as e:  # noqa: BLE001
+            self._anotar(bruta, texto, "erro", False)
             self.falar(f"Falhou: {str(e)[:120]}")
+
+    def _anotar(self, bruta: str, corrigida: str, rota: str, ok: bool) -> None:
+        try:
+            from tools import aprendizado
+
+            aprendizado.registrar(bruta, corrigida, rota, ok)
+        except Exception:  # noqa: BLE001 — o diário nunca pode derrubar a voz
+            pass
 
     # ---------- ouvidos (Vosk) ----------
 
@@ -503,6 +531,10 @@ class FreeEngine:
                 # canal saem deformados. Corrige antes de interpretar.
                 bruta = frase
                 frase = corrigir_vocabulario(frase)
+                # Guardado para o diário de aprendizado: o par (o que ouvi,
+                # o que entendi) é o que mostra se o dicionário está
+                # ajudando ou atrapalhando.
+                self._ultima_bruta = bruta
                 if frase != bruta:
                     self.ui.write_log(f"Você: {frase}   [ouvi: {bruta}]")
                 else:

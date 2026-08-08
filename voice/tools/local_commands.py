@@ -78,6 +78,10 @@ AJUDA = """# Comandos (funcionam sem créditos)
 - **`parar`** — interrompe a leitura (ou duas palmas)
 - **`esquece`** — troca de assunto. Ele lembra das últimas conversas para você
   poder dizer "e o roteiro *dela*?"; isto zera essa memória
+- **`revisar`** — mostra como ele está te entendendo e quais palavras você
+  repete que ele ainda não conhece
+- **`ensinar <o que ouvi> é <o que era>`** — corrige de vez. Ex.: *"ensinar
+  peni wase é Pennywise"*. Vale na hora, e passa a guiar a escuta
 - **`imagem <descrição>`** — gera uma imagem pela OpenAI e exibe
   *(precisa de saldo na conta OpenAI)*
 - **`projetos`** — lista os projetos encontrados
@@ -439,6 +443,32 @@ def handle(text: str, ui) -> str | None:
     # nunca seja interpretado como outra coisa.
     if low in ("parar", "para", "chega", "silencio", "silêncio", "cala"):
         return _leitura.parar()
+
+    # Como ele está te entendendo, e o que ainda falta ensinar. É a saída do
+    # diário de aprendizado — a resposta prática ao "como se treina isso".
+    if low in ("revisar", "revisa", "revisao", "revisão", "como me entende",
+               "aprendizado", "o que voce nao entende", "o que você não entende"):
+        from . import aprendizado as _aprendizado
+
+        texto = _aprendizado.resumo()
+        ui.show_document("Como estou te entendendo", texto)
+        falhas = texto.count("\n- ")
+        return ("Está na tela. " + (
+            "Diga 'ensinar <o que ouvi> é <o que era>' para as palavras da lista."
+            if falhas else "Nada de grave por ali."))
+
+    # "ensinar peni wase é Pennywise" — a correção vem de quem sabe.
+    if low.startswith(("ensinar ", "ensina ", "aprende ", "aprender ")):
+        from . import aprendizado as _aprendizado
+
+        resto = raw.split(" ", 1)[1] if " " in raw else ""
+        # Aceita "é", "e", "eh" e "seria" como separador: é ditado em voz alta,
+        # e o reconhecimento entrega qualquer um deles.
+        partes = re.split(r"\s+(?:é|e|eh|seria|significa)\s+", resto, maxsplit=1)
+        if len(partes) != 2:
+            return ("Diga assim: 'ensinar peni wase é Pennywise' — "
+                    "primeiro o que eu ouvi, depois o que era.")
+        return _aprendizado.ensinar(partes[0], partes[1])
 
     # Trocar de assunto explicitamente. O OMEGA agora carrega as últimas
     # trocas para entender "e o roteiro dela?"; quando o assunto muda de
