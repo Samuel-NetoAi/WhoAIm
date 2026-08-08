@@ -97,7 +97,12 @@ def ler(titulo: str, conteudo: str, ui, bonita: bool = False,
     Devolve imediatamente a frase de confirmação — quem chama não pode ficar
     bloqueado por minutos de leitura.
     """
-    falar = getattr(ui, "falar", None)
+    # `falar_leitura` existe para o motor Live: lá, `falar` entrega o texto ao
+    # MODELO dizer, o que para um dossiê de 27 mil caracteres queimaria a cota
+    # e — pior — faria o modelo resumir em vez de ler. Ler é sempre com a voz
+    # desta máquina. Quem não define o gancho (o motor local) usa `falar`, que
+    # já sintetiza aqui mesmo.
+    falar = getattr(ui, "falar_leitura", None) or getattr(ui, "falar", None)
     if falar is None:
         return "A voz não está disponível agora; o texto está na tela."
     if _estado["lendo"]:

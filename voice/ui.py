@@ -1384,8 +1384,22 @@ class MainWindow(QMainWindow):
     _ID_ATALHO = 0xA17A          # qualquer inteiro; só precisa ser nosso
     _WM_HOTKEY = 0x0312
     _MOD_CONTROL = 0x0002
+    _MOD_SHIFT = 0x0004
+    _MOD_ALT = 0x0001
     _MOD_NOREPEAT = 0x4000       # segurar a tecla não dispara em rajada
     _VK_SPACE = 0x20
+
+    # Ctrl+Espaço é o primeiro por ser o mais confortável, mas na máquina do
+    # Samuel ele JÁ ESTÁ OCUPADO por outro programa (o trocador de idioma do
+    # Windows e várias IDEs o usam). Um atalho que não registra é um recurso
+    # que não existe, então tentamos as alternativas em ordem e dizemos qual
+    # ficou valendo — em vez de anunciar uma tecla que não funciona.
+    _COMBINACOES = (
+        (_MOD_CONTROL, _VK_SPACE, "Ctrl+Espaço"),
+        (_MOD_CONTROL | _MOD_SHIFT, _VK_SPACE, "Ctrl+Shift+Espaço"),
+        (_MOD_ALT, _VK_SPACE, "Alt+Espaço"),
+        (_MOD_CONTROL | _MOD_SHIFT, 0x4F, "Ctrl+Shift+O"),   # O de OMEGA
+    )
 
     def registrar_atalho_global(self, ao_disparar) -> bool:
         """Liga Ctrl+Espaço. False = não deu (outro app já tomou a tecla)."""
@@ -1403,9 +1417,11 @@ class MainWindow(QMainWindow):
             user32 = ctypes.windll.user32
             # hwnd = 0: a tecla fica registrada para a THREAD, e as mensagens
             # chegam neste laço em vez de na fila da janela.
-            estado["ok"] = bool(user32.RegisterHotKey(
-                None, self._ID_ATALHO,
-                self._MOD_CONTROL | self._MOD_NOREPEAT, self._VK_SPACE))
+            for mods, tecla, rotulo in self._COMBINACOES:
+                if user32.RegisterHotKey(None, self._ID_ATALHO,
+                                         mods | self._MOD_NOREPEAT, tecla):
+                    estado.update({"ok": True, "rotulo": rotulo})
+                    break
             self._tid_atalho = ctypes.windll.kernel32.GetCurrentThreadId()
             pronto.set()
             if not estado["ok"]:
@@ -1424,11 +1440,20 @@ class MainWindow(QMainWindow):
         self._thread_atalho.start()
         pronto.wait(timeout=3)
 
-        if not estado["ok"]:
-            # Acontece de verdade: o Ctrl+Espaço é usado por trocadores de
-            # idioma e por IDEs. Falhar calado faria parecer defeito nosso.
-            self.write_log(
-                "SYS: Ctrl+Espaço já está em uso por outro programa — "
+        # `_log_sig`, e não `write_log`: este último é da OmegaUI, não da
+        # janela. A versão anterior chamava `self.write_log` aqui e estourava
+        # AttributeError — mas SÓ quando o registro falhava, que é justamente
+        # o caminho que nenhum teste exercitava. Em uso real a exceção subia e
+        # MATAVA a thread do motor: o app ficava aberto e completamente surdo,
+        # sem nada no log explicando.
+        self.atalho_rotulo = estado.get("rotulo", "")
+        if estado["ok"]:
+            self._log_sig.emit(
+                f"SYS: {self.atalho_rotulo} fala comigo sem precisar dizer o nome."
+            )
+        else:
+            self._log_sig.emit(
+                "SYS: nenhuma tecla de atalho ficou livre nesta máquina — "
                 "continue chamando por 'Ômega'."
             )
         return estado["ok"]
@@ -1648,6 +1673,7 @@ class MainWindow(QMainWindow):
         ("ajuda", "lista completa"),
         ("projetos", "todos os projetos"),
         ("progresso", "renders em curso"),
+        ("cancelar pesquisa", "aborta o que está rodando"),
         ("voltar", "volta ao núcleo"),
         ("Ctrl+Espaço", "fala sem dizer 'Ômega'"),
         ("— conteúdo —", None),

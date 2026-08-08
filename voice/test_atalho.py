@@ -62,17 +62,24 @@ def main() -> int:
     # 1) registro
     disparos = []
     registrado = janela.registrar_atalho_global(lambda: disparos.append(1))
-    print(f"[1] registrou a tecla            : {registrado}")
+    rotulo = getattr(janela, "atalho_rotulo", "?")
+    print(f"[1] registrou a tecla            : {registrado} ({rotulo})")
     if not registrado:
-        print("    PULADO: outro programa já usa Ctrl+Espaço nesta máquina.")
+        print("    PULADO: nenhuma das combinações ficou livre nesta máquina.")
         janela._encerrar_atalho()
         return 0
 
     # 2) exclusividade: enquanto o OMEGA a tem, ninguém mais consegue
-    livre_durante = _tecla_esta_livre()
-    print(f"[2] tecla ocupada enquanto ativa : {not livre_durante}")
-    if livre_durante:
-        falhas.append("a tecla não ficou reservada — dois OMEGA brigariam por ela")
+    # A exclusividade só é verificável quando o OMEGA ficou com a PRIMEIRA
+    # combinação; se ele caiu para uma alternativa, o Ctrl+Espaço está com
+    # outro programa e testá-lo mediria o vizinho, não a gente.
+    if rotulo == "Ctrl+Espaço":
+        livre_durante = _tecla_esta_livre()
+        print(f"[2] tecla ocupada enquanto ativa : {not livre_durante}")
+        if livre_durante:
+            falhas.append("a tecla não ficou reservada — dois OMEGA brigariam por ela")
+    else:
+        print(f"[2] exclusividade                : n/a (ficou com {rotulo})")
 
     # 3) o pulo do gato: da thread do atalho para a thread da UI
     threading.Thread(target=janela._atalho_sig.emit, daemon=True).start()
@@ -88,10 +95,13 @@ def main() -> int:
     janela._encerrar_atalho()
     janela.close()
     app.processEvents()
-    livre_depois = _tecla_esta_livre()
-    print(f"[4] devolveu a tecla ao fechar   : {livre_depois}")
-    if not livre_depois:
-        falhas.append("a tecla ficou presa — a próxima execução perde o atalho")
+    if rotulo == "Ctrl+Espaço":
+        livre_depois = _tecla_esta_livre()
+        print(f"[4] devolveu a tecla ao fechar   : {livre_depois}")
+        if not livre_depois:
+            falhas.append("a tecla ficou presa — a próxima execução perde o atalho")
+    else:
+        print(f"[4] devolução                    : n/a (ficou com {rotulo})")
 
     if falhas:
         print("\nFALHOU:")
@@ -99,7 +109,7 @@ def main() -> int:
             print("  -", f)
         return 1
     print("\nPASSOU: registro, exclusividade, travessia de thread e devolução.")
-    print("FALTA VOCÊ: abrir o OMEGA e apertar Ctrl+Espaço de outro programa.")
+    print(f"FALTA VOCÊ: abrir o OMEGA e apertar {rotulo} de outro programa.")
     return 0
 
 

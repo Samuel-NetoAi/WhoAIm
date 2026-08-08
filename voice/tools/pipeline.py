@@ -81,7 +81,49 @@ def _ensure_project(creature: str) -> Path:
     return project
 
 # Estado do último pipeline disparado (um por vez é suficiente por voz).
-_current: dict = {"running": False, "creature": None, "result": None}
+# `proc` existe para poder CANCELAR. Antes o pipeline era disparado com
+# subprocess.run, que bloqueia e não deixa referência nenhuma: quando o
+# Samuel disse "não precisa gerar o roteiro ainda", o OMEGA respondeu que
+# não dava para parar — e era verdade. Disparar algo de minutos sem botão
+# de parada é um defeito, não uma limitação.
+_current: dict = {"running": False, "creature": None, "result": None,
+                  "proc": None, "cancelado": False}
+
+
+def _matar(proc) -> None:
+    """Encerra o processo E OS FILHOS DELE.
+
+    No Windows matar o pai não mata os filhos, e o `claude` roda por baixo de
+    um .CMD que abre o node: matar só o topo deixaria o trabalho rodando
+    invisível, gastando créditos depois de o Samuel ter pedido para parar.
+    """
+    try:
+        if E_WINDOWS:
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                capture_output=True, timeout=20,
+            )
+        else:
+            proc.terminate()
+    except Exception:  # noqa: BLE001
+        try:
+            proc.kill()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def cancelar() -> str:
+    """Aborta o pipeline em curso."""
+    if not _current["running"]:
+        return "Não há nada rodando para cancelar, senhor."
+    criatura = _current["creature"]
+    proc = _current.get("proc")
+    _current["cancelado"] = True
+    if proc is None:
+        # Ainda não chegou a abrir o processo; a flag basta.
+        return f"Vou abortar a {criatura} assim que ela começar."
+    _matar(proc)
+    return f"Cancelado. Parei o trabalho na {criatura}."
 
 
 def _run_claude(creature: str, phase: str) -> None:
@@ -110,7 +152,7 @@ def _run_claude(creature: str, phase: str) -> None:
     )
 
     try:
-        proc = subprocess.run(
+        proc = subprocess.Popen(
             # --allowedTools é OBRIGATÓRIO: em modo headless o CLI começa sem
             # acesso à web, e a `pesquisa-seres` existe justamente para cruzar
             # web + transcrições do YouTube. Sem isto ela "termina" em ~1
@@ -134,11 +176,11 @@ def _run_claude(creature: str, phase: str) -> None:
                 "Grep",
             ],
             cwd=str(AI_PROJECT_ROOT),
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
             encoding="utf-8",
             errors="replace",
-            timeout=1800,
             # shell=True só no Windows, onde o npm instala um .CMD que precisa
             # do interpretador. No POSIX, shell=True com LISTA roda
             # `sh -c "claude"` e joga fora todos os argumentos seguintes — o
@@ -146,7 +188,20 @@ def _run_claude(creature: str, phase: str) -> None:
             # até o timeout de 30 minutos.
             shell=E_WINDOWS,
         )
-        saida = (proc.stdout or "") + (proc.stderr or "")
+        _current["proc"] = proc
+        try:
+            fora, erro = proc.communicate(timeout=1800)
+        except subprocess.TimeoutExpired:
+            _matar(proc)
+            fora, erro = proc.communicate()
+            raise
+        if _current["cancelado"]:
+            _current["result"] = (
+                f"Cancelei a {rotulo} de {creature} a seu pedido. "
+                "Nada foi gravado por essa execução."
+            )
+            return
+        saida = (fora or "") + (erro or "")
         levou = duracao_falada(time.monotonic() - inicio)
 
         if proc.returncode == 0:
@@ -216,9 +271,13 @@ def _projeto_equivalente(creature: str) -> str | None:
 def pipeline_criatura(args: dict) -> str:
     action = (args.get("action") or "start").strip()
 
+    if action in ("cancelar", "cancel", "parar", "abortar"):
+        return cancelar()
+
     if action == "status":
         if _current["running"]:
-            return f"Ainda estou trabalhando na criatura {_current['creature']}."
+            return (f"Ainda estou trabalhando na criatura {_current['creature']}. "
+                    "Diga 'cancelar pesquisa' se quiser que eu pare.")
         if _current["result"]:
             return _current["result"]
         return "Nenhum pipeline de criatura foi iniciado nesta sessão."
@@ -259,7 +318,8 @@ def pipeline_criatura(args: dict) -> str:
     if _current["running"]:
         return f"Já existe um pipeline rodando para {_current['creature']}. Pergunte o status."
 
-    _current.update({"running": True, "creature": creature, "result": None})
+    _current.update({"running": True, "creature": creature, "result": None,
+                     "proc": None, "cancelado": False})
     threading.Thread(target=_run_claude, args=(creature, phase), daemon=True).start()
     nome_fase = "pesquisa e dossiê" if phase == "pesquisa" else "roteiro e prompts"
     return (

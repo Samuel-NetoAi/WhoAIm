@@ -34,10 +34,18 @@ Suas capacidades reais são as ferramentas:
   abre o projeto no navegador).
 - pipeline_criatura: dispara o Claude Code para pesquisar uma criatura nova
   (fase pesquisa → dossiê) ou gerar roteiro e prompts (fase producao).
+  Custa minutos e créditos: só dispare quando o senhor pedir para PRODUZIR
+  algo que ainda não existe. action 'cancelar' aborta o que estiver em curso.
 - exibir: mostra conteúdo NA PRÓPRIA TELA do Omega — dossiê, roteiro,
-  prompts ou o vídeo renderizado. Use SEMPRE que o usuário pedir para ver,
-  ler, mostrar ou assistir algo; nunca leia um documento inteiro em voz alta,
-  exiba na tela e comente em uma frase.
+  prompts ou o vídeo renderizado. Use quando o senhor pedir para VER algo.
+- ler: lê um documento em voz alta, do começo ao fim. Use quando ele pedir
+  para OUVIR — "me lê", "narra", "conta". `voz='boa'` quando ele disser
+  narrar/interpretar/com emoção; `voz='comum'` no resto.
+  NÃO tente recitar o documento você mesmo: chame a ferramenta, que ela lê
+  por blocos e obedece a "parar". E NUNCA confunda um pedido de LEITURA com
+  um pedido de PRODUÇÃO — "narre a pesquisa" é ler o que já existe, jamais
+  gerar roteiro novo. Na dúvida entre ler e produzir, pergunte.
+- parar_leitura: interrompe a leitura em curso.
 - apagar: remove projetos ou renders, SEMPRE em dois passos. Primeiro
   'preparar' (só mostra o que seria apagado), leia em voz alta o que será
   removido, e só chame 'confirmar' DEPOIS que o senhor confirmar de viva voz.
@@ -150,17 +158,58 @@ TOOLS = [
             "Dispara o Claude Code para trabalhar numa criatura nova do canal. "
             "phase 'pesquisa' = monta o dossiê (fase 0); phase 'producao' = gera "
             "roteiro e prompts a partir do dossiê (fases 1-2). action 'status' "
-            "consulta o andamento."
+            "consulta o andamento e action 'cancelar' ABORTA o que está em "
+            "curso — use assim que o senhor disser que não quer mais, sem "
+            "argumentar que já começou."
         ),
         "parameters": {
             "type": "object",
             "properties": {
-                "action": {"type": "string", "enum": ["start", "status"]},
+                "action": {"type": "string",
+                           "enum": ["start", "status", "cancelar"]},
                 "creature": {"type": "string", "description": "Nome da criatura"},
                 "phase": {"type": "string", "enum": ["pesquisa", "producao"]},
             },
             "required": ["action"],
         },
+    },
+    {
+        "type": "function",
+        "name": "ler",
+        "description": (
+            "Lê um documento do projeto EM VOZ ALTA, inteiro, por blocos. "
+            "Use quando o senhor pedir para ouvir: 'me lê a pesquisa da X', "
+            "'narra o roteiro da X', 'conta a pesquisa'. "
+            "Isto LÊ o que já existe — nunca gera nada novo. Se o documento "
+            "não existir, diga isso; não ofereça produzir sem ele pedir."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "criatura": {"type": "string",
+                             "description": "Nome da criatura/projeto."},
+                "tipo": {"type": "string",
+                         "enum": ["pesquisa", "roteiro", "cenas"],
+                         "description": "O que ler. Padrão: pesquisa."},
+                "voz": {
+                    "type": "string",
+                    "enum": ["comum", "boa"],
+                    "description": (
+                        "'comum' = voz do Windows, grátis e ilimitada. "
+                        "'boa' = ElevenLabs, com emoção, mas gasta créditos "
+                        "de uma cota mensal pequena — use quando ele disser "
+                        "narrar, interpretar, ou pedir emoção/impacto."
+                    ),
+                },
+            },
+            "required": ["criatura"],
+        },
+    },
+    {
+        "type": "function",
+        "name": "parar_leitura",
+        "description": "Interrompe a leitura em voz alta que está em curso.",
+        "parameters": {"type": "object", "properties": {}},
     },
     {
         "type": "function",
@@ -215,12 +264,34 @@ def make_tool_executor(ui):
         ui.write_log(f"SYS: conferindo na web — {pergunta}")
         return web.conferir(pergunta)
 
+    def ler(args: dict) -> str:
+        """Lê um documento em voz alta.
+
+        Passa pelo MESMO caminho do comando digitado (`local_commands`), para
+        não existirem duas implementações de leitura divergindo. O verbo é
+        montado aqui: "ler" usa a voz grátis, "narrar" a da ElevenLabs.
+        """
+        criatura = (args.get("criatura") or "").strip()
+        tipo = (args.get("tipo") or "pesquisa").strip()
+        verbo = "narrar" if (args.get("voz") or "comum") == "boa" else "ler"
+        if not criatura:
+            return "Preciso saber de qual criatura."
+        resposta = _local(f"{verbo} {tipo} {criatura}", ui)
+        return resposta or f"Não achei {tipo} de {criatura}."
+
+    def parar_leitura(_args: dict) -> str:
+        from tools import leitura as mod
+
+        return mod.parar()
+
     impls = {
         "studio_control": studio_control,
         "pipeline_criatura": pipeline_criatura,
         "exibir": exibir,
         "apagar": apagar,
         "conferir": conferir,
+        "ler": ler,
+        "parar_leitura": parar_leitura,
     }
 
     def execute_tool(name: str, args: dict) -> str:

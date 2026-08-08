@@ -134,7 +134,13 @@ class FreeEngine:
         # fala erra sempre um pouco.
         registrar = getattr(self.ui, "registrar_atalho_global", None)
         if registrar:
-            registrar(self._ao_atalho_global)
+            try:
+                registrar(self._ao_atalho_global)
+            except Exception as e:  # noqa: BLE001
+                # Uma tecla que não registra é um incômodo; derrubar o
+                # motor por causa dela deixa o OMEGA surdo. Já aconteceu:
+                # a exceção subia daqui e matava a thread inteira.
+                self.ui.write_log(f"SYS: atalho global indisponível ({str(e)[:60]}).")
         # Os comandos locais precisam falar (leitura de documentos em voz
         # alta); expomos a fala pela UI para não acoplar os dois módulos.
         self.ui.falar = self.falar
@@ -143,54 +149,6 @@ class FreeEngine:
         self.ui.esquecer = self.esquecer
 
     # ---------- voz (SAPI / Maria pt-BR) ----------
-
-    def _falar_elevenlabs(self, texto: str) -> bool:
-        """Fala pela ElevenLabs. False = não deu, use a voz do Windows."""
-        try:
-            from tools import elevenlabs_voz
-
-            if not elevenlabs_voz.disponivel():
-                return False
-            wav = elevenlabs_voz.sintetizar(texto)
-            if not wav:
-                if elevenlabs_voz._estado["sem_credito"]:
-                    self.ui.write_log(
-                        "SYS: créditos da ElevenLabs acabaram — voltando à voz do Windows."
-                    )
-                return False
-
-            import wave
-
-            with wave.open(str(wav), "rb") as f:
-                taxa, canais = f.getframerate(), f.getnchannels()
-                dados = f.readframes(f.getnframes())
-
-            # RawOutputStream evita depender do numpy (que não está instalado)
-            # e é o mesmo mecanismo já usado no resto do motor.
-            stream = sd.RawOutputStream(
-                samplerate=taxa, channels=canais, dtype="int16"
-            )
-            stream.start()
-            try:
-                stream.write(dados)
-            finally:
-                stream.stop()
-                stream.close()
-            return True
-        except Exception as e:  # noqa: BLE001 — qualquer falha volta pra Maria
-            self.ui.write_log(f"SYS: ElevenLabs falhou ({str(e)[:50]}) — voz local.")
-            return False
-
-    def _init_voz(self):
-        import pyttsx3
-
-        motor = pyttsx3.init()
-        for v in motor.getProperty("voices"):
-            if "portug" in v.name.lower() or "maria" in v.name.lower():
-                motor.setProperty("voice", v.id)
-                break
-        motor.setProperty("rate", 190)
-        return motor
 
     def falar(self, texto: str, economico: bool = False) -> None:
         """Fala uma resposta.
@@ -215,16 +173,13 @@ class FreeEngine:
             self._falando.set()
             self.ui.set_state("SPEAKING")
             try:
-                # Primeiro a ElevenLabs (natural); se não houver chave ou
-                # crédito, cai para a Maria do Windows — ficar mudo seria pior
-                # que soar robótico.
-                if not economico and self._falar_elevenlabs(texto):
-                    return
-                # pyttsx3 não é seguro entre threads: um motor por fala.
-                motor = self._init_voz()
-                motor.say(texto)
-                motor.runAndWait()
-                motor.stop()
+                # A síntese em si vive em tools/voz_local.py: o motor Live
+                # precisa exatamente da mesma coisa para ler documento, e duas
+                # cópias da mesma voz divergiriam com o tempo.
+                from tools import voz_local
+
+                voz_local.falar(texto, economico=economico,
+                                log=self.ui.write_log)
             except Exception as e:  # noqa: BLE001
                 self._voz_indisponivel = True
                 self.ui.write_log(

@@ -98,6 +98,8 @@ AJUDA = """# Comandos (funcionam sem créditos)
 - **`pesquisar <criatura>`** — produz a pesquisa (fase 0)
 - **`produzir <criatura>`** — roteiro e cenas (fases 1–2)
 - **`andamento`** — como vai a pesquisa em curso *(= pipeline)*
+- **`cancelar pesquisa`** — aborta o trabalho em andamento. Vale também por
+  voz: "não precisa, pode parar"
 
 **Redes sociais** (YouTube, Instagram, TikTok, X)
 - **`login <rede>`** — abre a rede para **você** entrar. O OMEGA nunca digita
@@ -445,6 +447,15 @@ def handle(text: str, ui) -> str | None:
     # nunca seja interpretado como outra coisa.
     if low in ("parar", "para", "chega", "silencio", "silêncio", "cala"):
         return _leitura.parar()
+
+    # Abortar a pesquisa/produção em curso. Vem cedo para que um "cancelar"
+    # dito no meio de um trabalho longo não seja lido como outra coisa.
+    if low in ("cancelar pesquisa", "cancela pesquisa", "cancelar producao",
+               "cancelar produção", "cancelar roteiro", "parar pesquisa",
+               "para a pesquisa", "abortar", "cancelar tudo"):
+        from .pipeline import cancelar as _cancelar_pipeline
+
+        return _cancelar_pipeline()
 
     # "O que você está vendo?" — pedido do Samuel para acompanhar a postagem
     # sem ter que caçar a janela do Chrome no meio das outras.

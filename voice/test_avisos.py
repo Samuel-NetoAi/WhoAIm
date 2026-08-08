@@ -101,24 +101,30 @@ class TestAvisoDaPesquisa(unittest.TestCase):
         self.raiz = Path(self.tmp.name)
 
     def _rodar(self, returncode=0, escrever=None):
+        # Popen, não run: o pipeline passou a usar Popen para poder CANCELAR
+        # o trabalho no meio (antes o Samuel pedia para parar e o OMEGA
+        # respondia, com razão, que não dava). `communicate()` é o que devolve
+        # a saída agora.
         class Proc:
+            pid = 1234
+
             def __init__(self):
                 self.returncode = returncode
-                self.stdout = ""
-                self.stderr = ""
 
-        def falso_run(*a, **k):
-            if escrever:
-                for caminho in escrever:
-                    caminho.parent.mkdir(parents=True, exist_ok=True)
-                    caminho.write_text("conteúdo", encoding="utf-8")
-            return Proc()
+            def communicate(self, timeout=None):
+                if escrever:
+                    for caminho in escrever:
+                        caminho.parent.mkdir(parents=True, exist_ok=True)
+                        caminho.write_text("conteúdo", encoding="utf-8")
+                return "", ""
 
         with patch.object(self.pipeline, "AI_PROJECT_ROOT", self.raiz), patch.object(
             self.pipeline, "_resolver_claude", return_value="/bin/true"
-        ), patch.object(self.pipeline.subprocess, "run", side_effect=falso_run):
+        ), patch.object(self.pipeline.subprocess, "Popen",
+                        side_effect=lambda *a, **k: Proc()):
             self.pipeline._current.update(
-                {"running": True, "creature": "Quimera", "result": None}
+                {"running": True, "creature": "Quimera", "result": None,
+                 "proc": None, "cancelado": False}
             )
             self.pipeline._run_claude("Quimera", "pesquisa")
 

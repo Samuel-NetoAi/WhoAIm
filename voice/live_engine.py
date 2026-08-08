@@ -82,10 +82,26 @@ class LiveEngine:
 
         self.ui.on_text_command = self.processar_texto
         self.ui.falar = self.falar
+        # Leitura de documento NÃO passa pelo modelo — ver `falar_leitura`.
+        self.ui.falar_leitura = self.falar_leitura
         self.ui.esquecer = self.esquecer
+        # Duas palmas: a saída física para calar uma leitura longa. No motor
+        # local isso já existia; aqui faltava, e sem o gesto a única saída
+        # durante a leitura seria o teclado — que é justamente o que o Samuel
+        # não tem à mão quando está longe do PC.
+        from clap import DetectorDePalmas
+
+        self._palmas = DetectorDePalmas(taxa=TAXA_ENTRADA,
+                                        ao_detectar=self._ao_bater_palmas)
         registrar = getattr(self.ui, "registrar_atalho_global", None)
         if registrar:
-            registrar(self._ao_atalho_global)
+            try:
+                registrar(self._ao_atalho_global)
+            except Exception as e:  # noqa: BLE001
+                # Uma tecla que não registra é um incômodo; derrubar o
+                # motor por causa dela deixa o OMEGA surdo. Já aconteceu:
+                # a exceção subia daqui e matava a thread inteira.
+                self.ui.write_log(f"SYS: atalho global indisponível ({str(e)[:60]}).")
 
     # ---------- interface comum com o motor local ----------
 
@@ -147,9 +163,44 @@ class LiveEngine:
     # ---------- áudio ----------
 
     def _ao_capturar(self, indata, frames, tempo, status):
+        dados = bytes(indata)
+        # As palmas são ouvidas SEMPRE, inclusive durante a leitura.
+        self._palmas.alimentar(dados)
+
         if self.ui.muted:
             return
-        self._entrada.put(bytes(indata))
+
+        from tools import leitura as _leitura
+
+        if _leitura.lendo():
+            # Durante uma leitura o microfone NÃO vai para o modelo: a voz da
+            # leitura sai pelos alto-falantes, voltaria pelo microfone, e o
+            # Gemini responderia ao próprio dossiê — gastando cota para
+            # comentar o que ele mesmo está lendo. Para interromper: duas
+            # palmas, Ctrl+Espaço, ou o botão de parar.
+            return
+
+        self._entrada.put(dados)
+
+    def _ao_bater_palmas(self) -> None:
+        from tools import leitura as _leitura
+
+        if _leitura.lendo():
+            self.ui.write_log("SYS: duas palmas — " + _leitura.parar())
+            return
+        self.ui.write_log("SYS: duas palmas — trazendo a janela para a frente.")
+        self.ui.trazer_para_frente()
+
+    def falar_leitura(self, texto: str, economico: bool = True) -> None:
+        """Fala um bloco de documento com a voz DESTA MÁQUINA.
+
+        Separado de `falar` de propósito: `falar` entrega o texto ao modelo,
+        que é o certo para uma resposta de conversa e errado para um dossiê —
+        27 mil caracteres queimariam a cota e o modelo resumiria em vez de ler.
+        """
+        from tools import voz_local
+
+        voz_local.falar(texto, economico=economico, log=self.ui.write_log)
 
     def _descartar_saida(self) -> None:
         """Joga fora o áudio ainda não tocado — é isto que faz o barge-in.
