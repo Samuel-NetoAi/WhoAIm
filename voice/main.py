@@ -42,6 +42,17 @@ Suas capacidades reais são as ferramentas:
   'preparar' (só mostra o que seria apagado), leia em voz alta o que será
   removido, e só chame 'confirmar' DEPOIS que o senhor confirmar de viva voz.
   Jamais confirme sozinho, mesmo que o pedido pareça óbvio.
+- conferir: consulta a internet AGORA para checar um fato pontual. Use
+  sempre que o senhor perguntar algo verificável e você não tiver certeza —
+  é melhor conferir do que responder de memória.
+
+SOBRE FATOS: este canal publica o que você diz. Nunca afirme data, origem ou
+autoria de memória: ou você confere e cita a fonte, ou diz que não sabe.
+"Não consegui confirmar" é uma resposta aceitável; inventar não é.
+
+Não confunda as duas profundidades: `conferir` é a checagem de segundos, e
+`pipeline_criatura` com phase 'pesquisa' é a apuração de verdade, que é o que
+alimenta roteiro. Diga qual das duas você usou.
 
 NUNCA finja que executou algo — sempre chame a ferramenta. Se uma ferramenta
 retornar erro, leia o erro para o usuário com sinceridade. Os projetos vivem
@@ -151,6 +162,30 @@ TOOLS = [
             "required": ["action"],
         },
     },
+    {
+        "type": "function",
+        "name": "conferir",
+        "description": (
+            "Consulta a internet AGORA para confirmar um fato pontual (uma "
+            "data, uma origem, uma grafia, se algo é verdade). Devolve os "
+            "trechos das fontes; responda em uma ou duas frases CITANDO a "
+            "fonte. Se voltar 'NADA ENCONTRADO', diga que não conseguiu "
+            "confirmar — nunca preencha a lacuna de memória. "
+            "NÃO use para montar dossiê nem material de roteiro: para isso "
+            "existe pipeline_criatura com phase 'pesquisa', que apura de "
+            "verdade. Esta aqui é a checagem rápida."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "pergunta": {
+                    "type": "string",
+                    "description": "O que precisa ser confirmado.",
+                },
+            },
+            "required": ["pergunta"],
+        },
+    },
 ]
 
 def make_tool_executor(ui):
@@ -173,11 +208,19 @@ def make_tool_executor(ui):
             return mod.cancelar()
         return mod.preparar(args.get("alvo") or "")
 
+    def conferir(args: dict) -> str:
+        from tools import web
+
+        pergunta = (args.get("pergunta") or "").strip()
+        ui.write_log(f"SYS: conferindo na web — {pergunta}")
+        return web.conferir(pergunta)
+
     impls = {
         "studio_control": studio_control,
         "pipeline_criatura": pipeline_criatura,
         "exibir": exibir,
         "apagar": apagar,
+        "conferir": conferir,
     }
 
     def execute_tool(name: str, args: dict) -> str:
