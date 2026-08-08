@@ -255,18 +255,35 @@ class FreeEngine:
         corpo: dict = {
             "systemInstruction": {"parts": [{"text": self._instrucoes_com_estado()}]},
             "contents": contents,
-            "generationConfig": {"maxOutputTokens": 220, "temperature": 0.7},
+            # 220 cortava respostas com lista (tendências, comparação de regras)
+            # no meio da frase, que é pior que ser breve. Isto é teto, não
+            # meta: a instrução manda ser conciso, e a maioria das respostas
+            # continua com duas frases.
+            "generationConfig": {"maxOutputTokens": 600, "temperature": 0.7},
         }
         declaracoes = self._declaracoes()
         if declaracoes:
             corpo["tools"] = [{"functionDeclarations": declaracoes}]
 
-        r = requests.post(
-            GEMINI_URL, params={"key": self.gemini_key}, json=corpo, timeout=45
-        )
+        try:
+            r = requests.post(
+                GEMINI_URL, params={"key": self.gemini_key}, json=corpo, timeout=45
+            )
+        except requests.Timeout:
+            # Falha de rede vira frase em português. Antes a exceção subia crua
+            # e o OMEGA dizia "Falhou: HTTPSConnectionPool(host=..." em voz alta.
+            raise RuntimeError("O Gemini demorou demais para responder.") from None
+        except requests.RequestException:
+            raise RuntimeError("Estou sem conexão com o Gemini agora.") from None
+        if r.status_code == 429:
+            raise RuntimeError("A cota gratuita do Gemini estourou. "
+                               "Os comandos locais continuam funcionando.")
         if not r.ok:
             raise RuntimeError(f"O Gemini recusou: {r.status_code}.")
-        return r.json()
+        try:
+            return r.json()
+        except ValueError:
+            raise RuntimeError("O Gemini devolveu uma resposta ilegível.") from None
 
     def _perguntar_gemini(self, texto: str) -> str:
         """Conversa com o Gemini, EXECUTANDO as ferramentas que ele pedir.

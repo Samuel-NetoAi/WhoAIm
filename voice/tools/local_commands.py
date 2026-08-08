@@ -110,6 +110,11 @@ AJUDA = """# Comandos (funcionam sem créditos)
 - **`ver navegador`** — print da tela do navegador aqui dentro, para você
   acompanhar sem procurar a janela do Chrome
 
+**Escolher a próxima criatura**
+- **`tendências`** — o que está sendo buscado no YouTube e o que está em
+  ascensão no Google, já separando o que o canal ainda não tem. Vale também
+  perguntar por voz: *"sobre o que eu faço o próximo vídeo?"*
+
 **Curso** (assistir junto e virar regra do canal)
 - **`vamos assistir a aula de <assunto>`** — grava o som do PC e tira print da
   tela. Fale natural: "começa a aula", "bora assistir aula 4" também valem.
@@ -508,6 +513,18 @@ def handle(text: str, ui) -> str | None:
     # nunca seja interpretado como outra coisa.
     if low in ("parar", "para", "chega", "silencio", "silêncio", "cala"):
         return _leitura.parar()
+
+    # ----- o que esta em alta -----
+    if low in ("tendencias", "tendências", "em alta", "o que esta em alta",
+               "o que está em alta", "google trends", "trends",
+               "sobre o que fazer o proximo video"):
+        from . import tendencias as _tend
+
+        ui.write_log("SYS: buscando tendências...")
+        material = _tend.pesquisar()
+        ui.show_document("O que está em alta", material)
+        return ("Está na tela. Me pergunte o que fazer com isso que eu "
+                "analiso — sozinho eu só trouxe os números.")
 
     # ----- processar o curso e aprovar as regras -----
     if low in ("processar curso", "processa curso", "processar as aulas",

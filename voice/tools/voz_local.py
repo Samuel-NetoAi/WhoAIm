@@ -78,6 +78,12 @@ def falar(texto: str, economico: bool = False, log=None) -> None:
     """Diz o texto pelos alto-falantes desta máquina. Bloqueia até terminar."""
     if not texto:
         return
+    # O modelo formata em markdown por hábito, e a resposta vem para CÁ, não
+    # para a tela: sem limpar, a voz lê "asterisco asterisco Calypso". A
+    # leitura de documentos já fazia isso; faltava valer para toda resposta.
+    from .leitura import _limpar_markdown
+
+    texto = _limpar_markdown(texto) or texto
     log = log or (lambda _m: None)
     # Se uma aula está sendo gravada, ela captura o que sai pelos alto-falantes
     # — inclusive isto. Pausar evita que a voz do OMEGA entre na transcrição da

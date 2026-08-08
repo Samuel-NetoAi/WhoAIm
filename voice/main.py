@@ -28,6 +28,11 @@ de mitologia e criaturas do Samuel. Fale SEMPRE em português do Brasil,
 trate o usuário por "senhor", seja conciso e direto como o OMEGA do Homem
 de Ferro (uma ou duas frases quando possível, leve ironia elegante é bem-vinda).
 
+TUDO O QUE VOCÊ RESPONDE É FALADO EM VOZ ALTA. Escreva como se fala: nada de
+markdown, asterisco, marcador ou numeração — a voz lê os símbolos. Quando a
+resposta for uma lista, diga "primeiro… segundo…" em frases corridas, e deixe
+o detalhe para a tela.
+
 Suas capacidades reais são as ferramentas:
 - studio_control: controla o Alpha Studio (lista projetos de vídeo, analisa
   clipes+narração, renderiza vídeo completo ou Short, consulta progresso,
@@ -49,6 +54,10 @@ Suas capacidades reais são as ferramentas:
 - trecho_recente: transcreve o último minuto e meio da AULA que está sendo
   gravada. Use quando o senhor perguntar o que o professor acabou de dizer,
   ou pedir para explicar/repetir o que passou agora no vídeo.
+- tendencias: busca AGORA o que está sendo procurado (autocomplete do YouTube
+  + Google Trends), já separando o que o canal ainda não tem. Use quando ele
+  perguntar o que está em alta ou sobre o que fazer o próximo vídeo. É sinal
+  de busca, não garantia de alcance — não prometa resultado.
 - avaliar_seo: confere um título/descrição/plano de postagem contra as regras
   do curso de YouTube que ele aprovou. Use SEMPRE que ele propuser um título
   ou pedir opinião de SEO, mesmo sem citar o curso — foi para isso que ele
@@ -221,6 +230,28 @@ TOOLS = [
     },
     {
         "type": "function",
+        "name": "tendencias",
+        "description": (
+            "Busca AGORA o que as pessoas estão procurando, para escolher a "
+            "próxima criatura do canal: autocomplete do YouTube (o que se "
+            "digita lá) e consultas em ascensão do Google Trends. Já separa o "
+            "que o canal ainda não tem. Use quando o senhor perguntar o que "
+            "está em alta, o que postar, sobre o que fazer o próximo vídeo, "
+            "ou pedir para olhar o Google Trends. Deixe o parâmetro vazio "
+            "para varrer os temas do canal, ou passe um assunto específico."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "assunto": {
+                    "type": "string",
+                    "description": "Tema para aprofundar; vazio varre o canal.",
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
         "name": "avaliar_seo",
         "description": (
             "Confere um título, descrição, thumbnail ou plano de postagem "
@@ -327,6 +358,13 @@ def make_tool_executor(ui):
 
         return mod.parar()
 
+    def tendencias(args: dict) -> str:
+        from tools import tendencias as mod
+
+        assunto = (args.get("assunto") or "").strip()
+        ui.write_log(f"SYS: buscando tendências{f' — {assunto}' if assunto else ''}...")
+        return mod.pesquisar(assunto)
+
     def avaliar_seo(args: dict) -> str:
         from tools import curso
 
@@ -355,6 +393,7 @@ def make_tool_executor(ui):
         "conferir": conferir,
         "trecho_recente": trecho_recente,
         "avaliar_seo": avaliar_seo,
+        "tendencias": tendencias,
         "ler": ler,
         "parar_leitura": parar_leitura,
     }

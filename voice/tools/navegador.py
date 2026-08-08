@@ -105,6 +105,13 @@ def disponivel() -> bool:
 # "side-by-side configuration", falta runtime da Microsoft). Em vez de
 # instalar dependência de sistema, usamos o navegador que o Samuel já tem —
 # que também é o que ele reconhece quando a janela abre.
+# OPERA GX NÃO ENTRA NESTA LISTA, e o motivo é medido: ele até é lançado pelo
+# Playwright (é Chromium 133), mas TODA navegação morre com ERR_ABORTED —
+# testado com example.com, google.com e o Trends, e com as três correções
+# conhecidas (desligar VPN/adblock, desligar extensões, --remote-allow-origins).
+# É limitação do Opera com automação. O Samuel pode continuar usando o GX
+# normalmente: a gravação de aula e a captura de tela não dependem de qual
+# navegador é, só do que sai no som e do que está na tela.
 NAVEGADORES = (
     (r"C:\Program Files\Google\Chrome\Application\chrome.exe", "Chrome"),
     (r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe", "Chrome"),
