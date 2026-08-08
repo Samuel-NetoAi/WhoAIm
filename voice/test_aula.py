@@ -55,6 +55,53 @@ class TestSemDispositivo(unittest.TestCase):
         self.assertEqual(aula._slug("   "), "aula")
 
 
+class TestFalaNatural(unittest.TestCase):
+    """Ninguém fala "assistir aula" — fala "vamos começar a assistir a aula".
+
+    A primeira versão exigia que a frase COMEÇASSE com o verbo, e ignorava
+    exatamente a forma como o Samuel perguntou. É o mesmo erro que
+    `_extrair_verbo_e_alvo` existe para não cometer.
+    """
+
+    def test_reconhece_como_ele_realmente_fala(self):
+        from tools.local_commands import _e_pedido_de_aula
+
+        for frase in ("vamos começar a assistir aula",
+                      "vamos assistir a aula de miniatura",
+                      "quero assistir aula agora",
+                      "começa a aula sobre títulos",
+                      "bora assistir a aula de CTR",
+                      "grava essa aula",
+                      "assistir aula 4"):
+            self.assertTrue(_e_pedido_de_aula(frase.lower()), frase)
+
+    def test_nao_confunde_com_assistir_video(self):
+        """'assistir o vídeo da Medusa' toca um render — não grava aula."""
+        from tools.local_commands import _e_pedido_de_aula
+
+        for frase in ("assistir o vídeo da Medusa",
+                      "me mostra o vídeo do Cthulhu",
+                      "quero ver a pesquisa da Medusa"):
+            self.assertFalse(_e_pedido_de_aula(frase.lower()), frase)
+
+    def test_nao_reabre_quando_ele_manda_parar(self):
+        """'parar a aula' contém 'aula': sem cuidado, abriria outra gravação."""
+        from tools.local_commands import _e_pedido_de_aula
+
+        for frase in ("parar aula", "acabou a aula", "terminar a aula agora",
+                      "encerrar aula", "como está a aula"):
+            self.assertFalse(_e_pedido_de_aula(frase.lower()), frase)
+
+    def test_titulo_sai_limpo_da_frase(self):
+        from tools.local_commands import _titulo_da_aula
+
+        self.assertEqual(_titulo_da_aula("vamos assistir a aula de miniatura"),
+                         "miniatura")
+        self.assertEqual(_titulo_da_aula("assistir aula 4"), "aula 4")
+        self.assertEqual(_titulo_da_aula("Ômega, quero assistir aula agora"),
+                         "aula sem nome")
+
+
 @unittest.skipUnless(tem_mixagem(), "Mixagem estéreo não disponível/ativada")
 class TestGravacaoReal(unittest.TestCase):
     def setUp(self):

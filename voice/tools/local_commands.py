@@ -111,7 +111,8 @@ AJUDA = """# Comandos (funcionam sem créditos)
   acompanhar sem procurar a janela do Chrome
 
 **Curso** (assistir junto e virar regra do canal)
-- **`assistir <nome da aula>`** — grava o som do PC e tira print da tela;
+- **`vamos assistir a aula de <assunto>`** — grava o som do PC e tira print da
+  tela. Fale natural: "começa a aula", "bora assistir aula 4" também valem.
   **`parar aula`** encerra
 - **`guarda essa tela`** — print na hora, quando aparecer algo que importa
 - durante a aula: *"Ômega, o que ele acabou de dizer?"*
@@ -195,6 +196,54 @@ def _casar_verbo(palavra: str, aceitas: set[str]) -> str | None:
 
 def _quer_ouvir(raw: str) -> bool:
     return any(_casar_verbo(_norm(p), _VERBOS_DE_LEITURA) for p in raw.split())
+
+
+# Verbos que abrem uma gravação de aula. "ver"/"vendo" ficam de fora de
+# propósito: "vendo a aula" é ambíguo com só olhar, e disparar gravação por
+# engano enche o disco em silêncio.
+_VERBOS_DE_AULA = {"assistir", "assiste", "assistindo", "gravar", "grava",
+                   "gravando", "comecar", "começar", "comeca", "começa",
+                   "iniciar", "inicia", "abrir"}
+
+# Frases que ENCERRAM, e que também contêm "aula": precisam ser reconhecidas
+# antes, senão "parar a aula" abriria outra gravação.
+_FIM_DE_AULA = ("parar", "para", "pare", "terminar", "termina", "acabou",
+                "encerrar", "encerra", "fim", "chega")
+
+
+def _e_pedido_de_aula(baixo: str) -> bool:
+    palavras = [_norm(p) for p in baixo.split()]
+    if not any(p in ("aula", "aulas", "curso") for p in palavras):
+        return False
+    if any(p in _FIM_DE_AULA for p in palavras):
+        return False
+    return any(_casar_verbo(p, _VERBOS_DE_AULA) for p in palavras)
+
+
+# Palavras que dizem COMO fazer, e não O QUE é a aula. Tirá-las é o que
+# transforma "vamos começar a assistir a aula de miniatura" em "miniatura".
+_LIXO_NO_TITULO = _VERBOS_DE_AULA | {
+    "vamos", "vou", "quero", "queria", "agora", "ai", "aí", "entao", "então",
+    "a", "o", "as", "os", "de", "do", "da", "uma", "um", "essa", "esse",
+    "aula", "aulas", "curso", "sobre", "por", "favor", "ja", "já", "pode",
+    "podemos", "bora", "la", "lá", "e", "que", "com", "no", "na",
+    # O nome dele: no fluxo de voz o `_extrair_comando` já o remove, mas
+    # digitado ele chega inteiro e viraria o título da aula.
+    "omega", "ômega", "senhor",
+}
+
+
+def _titulo_da_aula(raw: str) -> str:
+    palavras = [p for p in raw.split()
+                if _norm(p.strip(",.!?")) not in _LIXO_NO_TITULO]
+    titulo = " ".join(palavras).strip(" ,.")
+    # "assistir aula 4" deixaria só "4" como nome de pasta, que não diz nada
+    # numa lista de vinte aulas.
+    if titulo.isdigit():
+        titulo = f"aula {titulo}"
+    # Sem título dito, o nome vem da hora — a pasta já é datada, e inventar
+    # nome seria pior do que admitir que ele não deu um.
+    return titulo or "aula sem nome"
 
 
 def _quer_narrar(raw: str) -> bool:
@@ -491,14 +540,19 @@ def handle(text: str, ui) -> str | None:
         return _curso.decidir(raw)
 
     # ----- assistir aula do curso junto com ele -----
-    if low.startswith(("assistir ", "assiste ", "gravar aula", "grava aula",
-                       "comecar aula", "começar aula", "nova aula")):
+    #
+    # Ninguém fala "assistir aula". Fala "vamos começar a assistir a aula de
+    # miniatura". A primeira versão exigia que a frase COMEÇASSE com o verbo e
+    # ignorava tudo isso — o mesmo erro que `_extrair_verbo_e_alvo` existe para
+    # não cometer. Aqui o verbo é procurado em qualquer posição.
+    #
+    # A palavra "aula" (ou "curso") é OBRIGATÓRIA, e é ela que desfaz a
+    # ambiguidade com "assistir o vídeo da Medusa", que toca um render e não
+    # tem nada a ver com gravar aula.
+    if _e_pedido_de_aula(low):
         from . import aula as _aula
 
-        titulo = re.sub(
-            r"^(assistir|assiste|gravar aula|grava aula|comecar aula|"
-            r"começar aula|nova aula)\s*", "", raw, flags=re.I).strip()
-        return _aula.iniciar(_aula.curso_atual(), titulo or "aula sem nome",
+        return _aula.iniciar(_aula.curso_atual(), _titulo_da_aula(raw),
                              avisar=ui.write_log)
 
     if low.startswith(("curso ", "novo curso ")) and "processar" not in low:

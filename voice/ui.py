@@ -1690,7 +1690,7 @@ class MainWindow(QMainWindow):
         ("ensinar X é Y", "corrige o que ele ouve"),
         ("imagem <descrição>", "gera imagem (OpenAI)"),
         ("— curso —", None),
-        ("assistir <aula>", "grava a aula do curso"),
+        ("assistir a aula de X", "grava a aula do curso"),
         ("guarda essa tela", "print do que importa"),
         ("parar aula", "encerra a gravação"),
         ("processar curso", "transcreve e tira as regras"),
