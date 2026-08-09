@@ -34,6 +34,7 @@ a extração de regras trataria isso como conteúdo do curso. Ver `pausar()`.
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import threading
@@ -187,17 +188,63 @@ def _mmss(segundos: float) -> str:
     return f"{int(segundos) // 60}:{int(segundos) % 60:02d}"
 
 
+# A marca de "o OMEGA está falando" precisa atravessar PROCESSOS.
+#
+# Durante a maratona quem grava é o processo da maratona, e quem fala é o app
+# — dois processos diferentes, cada um com o seu `_silenciado`. Sem um sinal
+# no disco, a voz do OMEGA entrava na gravação SEM marcação, e depois virava
+# "fala do professor" na extração de regras. É o mesmo defeito que a marcação
+# por intervalo existe para evitar, só que atravessando a fronteira errada.
+_AVISO_DE_FALA = Path(__file__).resolve().parent.parent / "_falando.flag"
+_mudo_externo = False
+
+
+def _em_silencio() -> bool:
+    return bool(_silenciado) or _mudo_externo
+
+
 def pausar() -> None:
     """Para de gravar enquanto o OMEGA fala. Chamado pelos dois motores."""
     global _silenciado
     with _trava:
         _silenciado += 1
+        if _silenciado == 1:
+            try:
+                _AVISO_DE_FALA.write_text(str(os.getpid()), encoding="utf-8")
+            except Exception:  # noqa: BLE001
+                pass
 
 
 def retomar() -> None:
     global _silenciado
     with _trava:
         _silenciado = max(0, _silenciado - 1)
+        if _silenciado == 0:
+            try:
+                _AVISO_DE_FALA.unlink()
+            except FileNotFoundError:
+                pass
+            except Exception:  # noqa: BLE001
+                pass
+
+
+def _vigiar_fala_de_fora() -> None:
+    """Espelha o aviso de OUTRO processo no silêncio desta gravação.
+
+    Pesquisa de arquivo cinco vezes por segundo é barato; perder a marcação
+    de uma pergunta feita no meio da aula não é.
+    """
+    global _mudo_externo
+    meu = str(os.getpid())
+    while not _parar.wait(0.2):
+        if not _estado["gravando"]:
+            break
+        try:
+            dono = _AVISO_DE_FALA.read_text(encoding="utf-8").strip()
+        except Exception:  # noqa: BLE001 — sem arquivo é o caso comum
+            dono = ""
+        _mudo_externo = bool(dono) and dono != meu
+    _mudo_externo = False
 
 
 def _saida_incompativel() -> str | None:
@@ -303,9 +350,10 @@ def _callback(indata, frames, tempo, status):
         # Vídeo parado: não há aula para gravar.
         return
 
-    if _silenciado and not _estado.get("mudo_desde"):
+    calado = _em_silencio()
+    if calado and not _estado.get("mudo_desde"):
         _estado["mudo_desde"] = _segundos_de_aula()
-    elif not _silenciado and _estado.get("mudo_desde"):
+    elif not calado and _estado.get("mudo_desde"):
         _estado.setdefault("mudos", []).append(
             (_estado["mudo_desde"], _segundos_de_aula()))
         _estado["mudo_desde"] = None
@@ -492,6 +540,8 @@ def iniciar(curso: str, titulo: str, avisar=None) -> str:
 
     threading.Thread(target=_laco_de_prints, args=(pasta / "telas",),
                      name="prints-aula", daemon=True).start()
+    threading.Thread(target=_vigiar_fala_de_fora,
+                     name="fala-de-fora", daemon=True).start()
     if avisar:
         threading.Thread(target=_vigiar_silencio, args=(avisar,),
                          name="silencio-aula", daemon=True).start()

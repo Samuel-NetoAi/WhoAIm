@@ -177,6 +177,78 @@ class TestFalaNatural(unittest.TestCase):
                          "aula sem nome")
 
 
+class TestFalaDeOutroProcesso(unittest.TestCase):
+    """Na maratona, quem GRAVA e quem FALA são processos diferentes.
+
+    Cada um tem o seu `_silenciado` em memória, então a voz do OMEGA entrava
+    na gravação sem marcação nenhuma — e depois viraria "fala do professor"
+    na extração de regras. O sinal precisa estar no disco.
+    """
+
+    def tearDown(self):
+        aula._AVISO_DE_FALA.unlink(missing_ok=True)
+        aula._mudo_externo = False
+        while aula._silenciado:
+            aula.retomar()
+
+    def test_pausar_deixa_recado_no_disco(self):
+        import os
+
+        aula.pausar()
+        self.assertEqual(aula._AVISO_DE_FALA.read_text(encoding="utf-8"),
+                         str(os.getpid()))
+        aula.retomar()
+        self.assertFalse(aula._AVISO_DE_FALA.exists())
+
+    def test_o_recado_so_sai_quando_a_ultima_fala_acaba(self):
+        """Duas falas sobrepostas: soltar cedo deixa a segunda entrar."""
+        aula.pausar()
+        aula.pausar()
+        aula.retomar()
+        self.assertTrue(aula._AVISO_DE_FALA.exists())
+        aula.retomar()
+        self.assertFalse(aula._AVISO_DE_FALA.exists())
+
+    def test_voz_de_outro_processo_marca_o_trecho(self):
+        import threading
+        import time as _t
+
+        aula._AVISO_DE_FALA.write_text("999999", encoding="utf-8")
+        aula._estado["gravando"] = True
+        aula._parar.clear()
+        threading.Thread(target=aula._vigiar_fala_de_fora, daemon=True).start()
+        try:
+            _t.sleep(0.6)
+            self.assertTrue(aula._em_silencio(), "não viu o outro processo")
+            aula._AVISO_DE_FALA.unlink()
+            _t.sleep(0.6)
+            self.assertFalse(aula._em_silencio(), "não voltou sozinho")
+        finally:
+            aula._estado["gravando"] = False
+            aula._parar.set()
+            _t.sleep(0.3)
+            aula._parar.clear()
+
+    def test_nao_se_cala_pelo_proprio_recado(self):
+        """O recado é meu: espelhá-lo em mim mesmo marcaria em dobro."""
+        import threading
+        import time as _t
+
+        aula.pausar()
+        aula._estado["gravando"] = True
+        aula._parar.clear()
+        threading.Thread(target=aula._vigiar_fala_de_fora, daemon=True).start()
+        try:
+            _t.sleep(0.5)
+            self.assertFalse(aula._mudo_externo)
+        finally:
+            aula._estado["gravando"] = False
+            aula._parar.set()
+            _t.sleep(0.3)
+            aula._parar.clear()
+            aula.retomar()
+
+
 class TestApagarAula(unittest.TestCase):
     """Nasceu de um caso real: ele parou a aula 2 no minuto 9 de 13.
 

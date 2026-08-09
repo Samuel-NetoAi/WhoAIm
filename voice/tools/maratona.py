@@ -123,6 +123,30 @@ def situacao() -> str:
             f"{e.get('gravadas', 0)} já gravada(s). Diga 'parar o curso' para eu parar.")
 
 
+# Medido: áudio 16 kHz mono são ~32 KB/s (≈115 MB por hora) e as telas somam
+# ~9 MB por hora. Dez horas de curso ficam perto de 1,3 GB.
+MINIMO_LIVRE_GB = 4.0
+
+
+def _espaco_curto() -> str:
+    from . import aula as _aula
+
+    try:
+        import shutil
+
+        raiz = _aula.CURSOS
+        while not raiz.exists() and raiz != raiz.parent:
+            raiz = raiz.parent
+        livre = shutil.disk_usage(raiz).free / 1e9
+    except Exception:  # noqa: BLE001
+        return ""
+    if livre >= MINIMO_LIVRE_GB:
+        return ""
+    return (f"Só há {livre:.1f} GB livres e uma noite de curso pede uns "
+            "1,3 GB com folga. Libere espaço antes — se o disco encher no "
+            "meio, eu perco as aulas seguintes.")
+
+
 def iniciar(url: str = "", ui=None) -> str:
     """Dispara o processo que assiste o curso. Devolve a frase para o Samuel."""
     from . import aula as _aula
@@ -143,6 +167,12 @@ def iniciar(url: str = "", ui=None) -> str:
     if "kiwify" not in url and "http" not in url:
         return f"Isso não parece um link de curso: {url[:60]}"
     guardar_url(url)
+
+    # Uma noite de curso são ~1,5 GB entre áudio e telas. Descobrir que o
+    # disco encheu na aula 30 é perder as trinta seguintes.
+    falta = _espaco_curto()
+    if falta:
+        return falta
 
     # O perfil do Chromium é de um processo só (ver o cabeçalho).
     navegador.fechar()
@@ -174,11 +204,40 @@ def parar() -> str:
     if not rodando():
         return "Não estou assistindo o curso."
     PEDIDO_DE_PARAR.write_text(str(time.time()), encoding="utf-8")
-    return ("Encerro depois da aula que está gravando agora — cortar no meio "
-            "deixaria uma gravação pela metade.")
+    # A verdade, e não a versão bonita: ele para em segundos, no meio da aula.
+    # A gravação parcial fica no disco mas NÃO ganha a marca de completa, então
+    # ao retomar essa aula é refeita do começo e as anteriores são puladas.
+    return ("Paro em alguns segundos. A aula que está gravando agora fica pela "
+            "metade — quando você mandar assistir de novo, eu refaço só ela e "
+            "pulo as que já terminei.")
 
 
 # ─────────────────────────── lado do trabalhador ───────────────────────────
+
+def _impedir_dormir(ligar: bool) -> None:
+    """Segura o Windows acordado durante a maratona.
+
+    O risco número um de rodar dez horas de madrugada não é o navegador: é o
+    Windows apagar a tela e suspender a máquina às três horas. O vídeo para, o
+    áudio para, e de manhã há trinta aulas faltando sem erro nenhum no diário.
+
+    `ES_DISPLAY_REQUIRED` também segura o protetor de tela — e é por isso que
+    ele entra junto, mesmo a gravação sendo de áudio: com a tela apagada o
+    print sai preto, e é o print que amarra o slide ao minuto da fala.
+
+    Vale só para a thread que chamou, então quem chama é o laço principal.
+    """
+    if os.name != "nt":
+        return
+    import ctypes
+
+    CONTINUO, SISTEMA, TELA = 0x80000000, 0x00000001, 0x00000002
+    try:
+        ctypes.windll.kernel32.SetThreadExecutionState(
+            (CONTINUO | SISTEMA | TELA) if ligar else CONTINUO)
+    except Exception:  # noqa: BLE001
+        pass
+
 
 def _anotar(msg: str) -> None:
     linha = f"{datetime.now():%H:%M:%S} {msg}"
@@ -203,6 +262,101 @@ def _publicar(**campos) -> None:
 
 def _mandaram_parar() -> bool:
     return PEDIDO_DE_PARAR.exists()
+
+
+# Quanto esperar a página parar de se mexer antes de julgar o que ela é.
+PACIENCIA_ASSENTAR = 60.0
+
+_PRONTA = """() => !!document.querySelector('video')
+   || document.querySelectorAll('ol li a[href]').length > 1"""
+
+
+def _assentar(pagina, limite: float = PACIENCIA_ASSENTAR) -> bool:
+    """Espera a página ASSENTAR antes de decidir qualquer coisa sobre ela.
+
+    Medido na Kiwify real: ela abre na aula, PULA para /login por volta de 2
+    segundos enquanto revalida a sessão, e volta sozinha aos 10. Uma checagem
+    única cai no meio desse pulo mais ou menos na metade das vezes — e o
+    ensaio desta noite morreu assim, com "pediu login" na primeira tentativa,
+    logado o tempo todo. Numa maratona sem ninguém olhando, isso é a noite
+    inteira jogada fora por causa de uma amostra tirada no instante errado.
+
+    Assentada = não está no /login E já tem vídeo ou lista de aulas na tela.
+    """
+    fim = time.monotonic() + limite
+    while time.monotonic() < fim:
+        try:
+            endereco = (pagina.url or "").lower()
+            if not any(m in endereco for m in ("/login", "signin", "sign_in")):
+                if pagina.evaluate(_PRONTA):
+                    return True
+        except Exception:  # noqa: BLE001 — durante a troca a página some
+            pass
+        time.sleep(1.5)
+    return False
+
+
+def _perfil_ocupado() -> bool:
+    """Ainda há um navegador segurando o nosso perfil?"""
+    from . import navegador
+
+    try:
+        saida = subprocess.run(
+            ["wmic", "process", "where",
+             "name='brave.exe' or name='chrome.exe' or name='msedge.exe'",
+             "get", "CommandLine", "/format:list"],
+            capture_output=True, text=True, timeout=20).stdout
+    except Exception:  # noqa: BLE001 — sem wmic, seguimos e torcemos
+        return False
+    return navegador.PERFIL.name in (saida or "")
+
+
+TENTATIVAS_POR_PAGINA = 4
+
+
+def _abrir_curso(pagina, url: str, tentativas: int = TENTATIVAS_POR_PAGINA,
+                 relancar: bool = False):
+    """Abre um endereço do curso e INSISTE até a página estar de pé.
+
+    Insistir aqui não é paranoia, é o número medido. Abri a mesma aula quatro
+    vezes seguidas, com a sessão salva o tempo todo, e UMA delas veio com
+    "Acessar área de membros" — a Kiwify erra a revalidação de vez em quando,
+    e o `localStorage` continuava lá, intacto, na tentativa seguinte.
+
+    Uma em quatro parece pouco até multiplicar por trinta e oito aulas: seriam
+    umas nove noites de trabalho perdidas se uma recusa dessas encerrasse a
+    maratona. Recarregar custa quinze segundos. Com quatro tentativas a chance
+    de a aula ser perdida por isso cai para menos de meio por cento.
+
+    Devolve (página, deu certo).
+    """
+    from . import navegador
+
+    for n in range(1, tentativas + 1):
+        try:
+            if n == 1 or pagina is None:
+                with navegador._trava:
+                    pagina = navegador._ir_para(url)
+            else:
+                pagina.reload(wait_until="domcontentloaded", timeout=60000)
+        except Exception as e:  # noqa: BLE001
+            _anotar(f"navegação falhou ({n}): {str(e)[:80]}")
+            pagina = _reabrir(pagina, url)
+            continue
+
+        if _assentar(pagina, 40):
+            return pagina, True
+        _anotar(f"a Kiwify pediu login na tentativa {n} — recarregando")
+        time.sleep(5)
+
+    if relancar:
+        # Último recurso: derrubar o navegador e subir de novo. Só na abertura
+        # do curso, onde vale gastar um minuto para não perder a noite.
+        _anotar("último recurso: reiniciando o navegador")
+        navegador.fechar()
+        time.sleep(15)
+        return _abrir_curso(None, url, tentativas=2, relancar=False)
+    return pagina, False
 
 
 def _quadro_do_video(pagina, limite: float = ESPERA_PLAYER):
@@ -333,16 +487,29 @@ def _lista_de_aulas(pagina) -> list[dict]:
     return saida[:MAX_AULAS]
 
 
+# Marca de aula INTEIRA. Não basta existir um WAV grande: se o processo cair
+# aos 80% de uma aula de 20 minutos, o arquivo tem 16 minutos e pareceria
+# pronto — e ao retomar o OMEGA pularia justamente a aula que ficou pela
+# metade, sem dizer nada. Só quem chegou ao fim ganha esta marca.
+MARCA_COMPLETA = "completa.json"
+
+
 def _ja_gravada(curso: str, titulo: str) -> bool:
     from . import aula as _aula
 
     pasta = _aula.CURSOS / _aula._slug(curso) / "aulas"
     alvo = _aula._slug(titulo)
-    for d in pasta.glob(f"*-{alvo}"):
-        wav = d / "audio.wav"
-        if wav.exists() and wav.stat().st_size > 200_000:   # ~6 s de áudio
-            return True
-    return False
+    return any((d / MARCA_COMPLETA).exists() for d in pasta.glob(f"*-{alvo}"))
+
+
+def _marcar_completa(pasta: Path, titulo: str, duracao: float) -> None:
+    try:
+        (pasta / MARCA_COMPLETA).write_text(
+            json.dumps({"titulo": titulo, "duracao": duracao,
+                        "quando": f"{datetime.now():%Y-%m-%d %H:%M}"},
+                       ensure_ascii=False, indent=1), encoding="utf-8")
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _assistir_uma(pagina, curso: str, indice: int, total: int,
@@ -380,11 +547,14 @@ def _assistir_uma(pagina, curso: str, indice: int, total: int,
     if not resposta.startswith("GRAVANDO"):
         _anotar(f"[{indice}/{total}] não consegui gravar: {resposta[:120]}")
         return "sem gravação"
+    pasta = _aula._estado["pasta"]        # some do estado depois do `parar`
     _anotar(f"[{indice}/{total}] gravando \"{titulo}\" "
             f"({int(duracao) // 60}:{int(duracao) % 60:02d})")
 
     motivo = _acompanhar(quadro, duracao, indice, total, titulo)
     _anotar(f"[{indice}/{total}] {_aula.parar()[:160]}")
+    if motivo == "acabou":
+        _marcar_completa(pasta, titulo, duracao)
     return motivo
 
 
@@ -441,6 +611,32 @@ def _acompanhar(quadro, duracao: float, indice: int, total: int,
             _tocar(quadro)
 
 
+def _reabrir(pagina, url: str):
+    """Levanta o navegador de novo depois de um tombo.
+
+    O Chromium morre: aba que trava, GPU que cai, atualização automática. Numa
+    sessão de dez horas isso deixa de ser hipótese. Reabrir custa segundos, e
+    a alternativa é perder o resto da noite.
+    """
+    from . import navegador
+
+    try:
+        if not pagina.is_closed():
+            return pagina
+    except Exception:  # noqa: BLE001
+        pass
+    _anotar("o navegador caiu — reabrindo")
+    try:
+        navegador.fechar()
+        with navegador._trava:
+            nova = navegador._ir_para(url)
+        nova.wait_for_timeout(5000)
+        return nova
+    except Exception as e:  # noqa: BLE001
+        _anotar(f"não consegui reabrir: {str(e)[:120]}")
+        return pagina
+
+
 def _falar(texto: str) -> None:
     """Aviso por voz entre as aulas — NUNCA durante a gravação.
 
@@ -461,17 +657,28 @@ def trabalhar(url: str) -> None:
     from . import navegador
 
     curso = _aula.curso_atual()
-    _publicar(rodando=True, pid=os.getpid(), inicio=time.time(),
-              gravadas=0, url=url, fim="", curso=curso)
+    # Zerar, e não mesclar: `_publicar` atualiza campo a campo, então sem isto
+    # o minuto e a duração da corrida ANTERIOR sobrevivem, e a "situação"
+    # relata uma aula que não está tocando. Visto no ensaio.
+    ESTADO.unlink(missing_ok=True)
+    _publicar(rodando=True, pid=os.getpid(), inicio=time.time(), gravadas=0,
+              url=url, fim="", curso=curso, aula="", indice=0, total=0,
+              segundos=0, duracao=0, travadas=[])
     _anotar(f"=== maratona: {url[:80]}")
+    _impedir_dormir(True)
 
     gravadas = 0
     try:
-        with navegador._trava:
-            pagina = navegador._ir_para(url)
-        pagina.wait_for_timeout(5000)
+        if _perfil_ocupado():
+            _anotar("esperando o navegador anterior soltar o perfil")
+            for _ in range(10):
+                time.sleep(4)
+                if not _perfil_ocupado():
+                    break
+        pagina, assentou = _abrir_curso(None, url, relancar=True)
 
-        if navegador._parece_tela_de_login(pagina):
+        if not assentou:
+            _anotar("parou no login de verdade — não vou adivinhar senha")
             _publicar(rodando=False, fim="pediu login")
             _falar("O curso está pedindo login. Entre na janela que eu abri, "
                    "e depois peça de novo.")
@@ -499,18 +706,52 @@ def trabalhar(url: str) -> None:
 
         # Da PRIMEIRA em diante, e não de onde ele parou: o curso tem ordem, e
         # a extração de regras fica melhor com o contexto vindo em sequência.
+        seguidas_ruins = 0
         for indice, item in enumerate(aulas, start=1):
             if _mandaram_parar():
                 break
-            if pagina.url.split("?")[0] != item["href"].split("?")[0]:
-                with navegador._trava:
-                    pagina = navegador._ir_para(item["href"])
-                pagina.wait_for_timeout(4000)
+            # UMA AULA QUE FALHA NÃO PODE LEVAR AS OUTRAS TRINTA E SETE. Sem
+            # este try, um `Target closed` na aula 3 encerraria a madrugada
+            # inteira — que é exatamente o risco de rodar sem ninguém olhando.
+            try:
+                if pagina.url.split("?")[0] != item["href"].split("?")[0]:
+                    # A recusa intermitente da Kiwify acontece a CADA troca de
+                    # aula. Insistir aqui é o que impede que uma recusa numa
+                    # aula qualquer no meio da madrugada encerre a maratona.
+                    pagina, ok = _abrir_curso(pagina, item["href"])
+                    if not ok:
+                        _anotar(f"[{indice}/{total}] não consegui abrir a aula")
+                        motivo = "não abriu"
+                        seguidas_ruins += 1
+                        if seguidas_ruins >= 5:
+                            _anotar("cinco seguidas falharam — parando")
+                            _falar("A sessão do curso parece ter caído. Entre "
+                                   "de novo na janela e me mande retomar: eu "
+                                   "pulo o que já gravei.")
+                            break
+                        continue
 
-            motivo = _assistir_uma(pagina, curso, indice, total,
-                                   item["titulo"])
+                motivo = _assistir_uma(pagina, curso, indice, total,
+                                       item["titulo"])
+            except Exception as e:  # noqa: BLE001
+                motivo = f"erro: {type(e).__name__}"
+                _anotar(f"[{indice}/{total}] {motivo}: {str(e)[:140]}")
+                if _aula.gravando():
+                    _aula.parar()
+                pagina = _reabrir(pagina, item["href"])
+
             if motivo == "acabou":
                 gravadas += 1
+                seguidas_ruins = 0
+            elif motivo not in ("já gravada", "você mandou parar"):
+                seguidas_ruins += 1
+                # Cinco seguidas não é azar, é algo quebrado (sessão, som,
+                # rede). Insistir mais só gasta a madrugada.
+                if seguidas_ruins >= 5:
+                    _anotar("cinco aulas seguidas falharam — parando")
+                    _falar("Cinco aulas seguidas falharam, então parei. "
+                           "Olhe o diário da maratona.")
+                    break
             _publicar(gravadas=gravadas)
             if motivo == "você mandou parar":
                 break
@@ -530,6 +771,7 @@ def trabalhar(url: str) -> None:
     finally:
         if _aula.gravando():
             _anotar(_aula.parar()[:160])
+        _impedir_dormir(False)
         try:
             PEDIDO_DE_PARAR.unlink()
         except FileNotFoundError:

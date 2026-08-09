@@ -247,6 +247,135 @@ class TestAcompanhar(unittest.TestCase):
                          "a página saiu do ar")
 
 
+class TestPuloPeloLogin(unittest.TestCase):
+    """Medido na Kiwify real, e quase custou a noite inteira.
+
+    A página abre na aula, PULA para /login por volta de 2 s enquanto
+    revalida a sessão, e volta sozinha aos 10. Uma checagem única cai no meio
+    do pulo mais ou menos na metade das vezes — e o worker encerrou com
+    "pediu login" estando logado o tempo todo.
+    """
+
+    class Pagina:
+        """Reproduz o pulo: aula → /login → aula."""
+
+        def __init__(self, roteiro):
+            self.roteiro = list(roteiro)
+            self.url = self.roteiro[0]
+
+        def _passo(self):
+            if len(self.roteiro) > 1:
+                self.roteiro.pop(0)
+            self.url = self.roteiro[0]
+
+        def evaluate(self, _):
+            pronta = "/login" not in self.url
+            self._passo()
+            return pronta
+
+    def setUp(self):
+        self._time = maratona.time
+
+        class Relogio:
+            agora = 0.0
+
+            def sleep(self, s):
+                Relogio.agora += s
+
+            def monotonic(self):
+                return Relogio.agora
+
+            time = staticmethod(__import__("time").time)
+
+        maratona.time = Relogio()
+
+    def tearDown(self):
+        maratona.time = self._time
+
+    def test_espera_a_volta_em_vez_de_desistir(self):
+        aula_ = "https://members.kiwify.com/a/b/c"
+        pag = self.Pagina([aula_, "https://members.kiwify.com/login?club=x",
+                           "https://members.kiwify.com/login?club=x",
+                           aula_])
+        self.assertTrue(maratona._assentar(pag, 40))
+
+    def test_login_de_verdade_nao_assenta(self):
+        """Sessão caída mesmo: fica no /login e ele tem que dizer isso."""
+        pag = self.Pagina(["https://members.kiwify.com/login?club=x"])
+        self.assertFalse(maratona._assentar(pag, 20))
+
+    def test_pagina_sem_lista_nem_video_nao_conta_como_pronta(self):
+        class Vazia:
+            url = "https://members.kiwify.com/a/b/c"
+
+            def evaluate(self, _):
+                return False
+
+        self.assertFalse(maratona._assentar(Vazia(), 10))
+
+
+class TestRetomarDepoisDeCair(unittest.TestCase):
+    """A pergunta do Samuel: "se der erro de madrugada, perdemos horas?"
+
+    A resposta só pode ser "não" se retomar souber exatamente o que já ficou
+    pronto — e, principalmente, o que ficou PELA METADE.
+    """
+
+    def setUp(self):
+        import tempfile
+
+        from tools import aula as _aula
+
+        self.tmp = tempfile.TemporaryDirectory()
+        self._cursos = _aula.CURSOS
+        _aula.CURSOS = Path(self.tmp.name) / "Cursos"
+        self.raiz = _aula.CURSOS / "curso-x" / "aulas"
+        self.raiz.mkdir(parents=True)
+
+    def tearDown(self):
+        import shutil
+
+        from tools import aula as _aula
+
+        _aula.CURSOS = self._cursos
+        shutil.rmtree(self.tmp.name, ignore_errors=True)
+
+    def _pasta(self, slug, minutos, completa):
+        d = self.raiz / f"20260809-1800-{slug}"
+        (d / "telas").mkdir(parents=True)
+        (d / "audio.wav").write_bytes(bytes(int(minutos * 60 * 32_000)))
+        if completa:
+            maratona._marcar_completa(d, slug, minutos * 60)
+        return d
+
+    def test_pula_o_que_terminou(self):
+        self._pasta("aula-1-a-escolha", 12, completa=True)
+        self.assertTrue(maratona._ja_gravada("curso-x", "Aula 1 A Escolha"))
+
+    def test_NAO_pula_o_que_ficou_pela_metade(self):
+        """16 minutos de uma aula de 20 tem WAV grande e parece pronta.
+
+        Foi por isso que a marca deixou de ser "o arquivo é grande": ao
+        retomar, ele pularia justamente a aula que o tombo interrompeu.
+        """
+        self._pasta("aula-2-sub-nicho", 16, completa=False)
+        self.assertFalse(maratona._ja_gravada("curso-x", "Aula 2 Sub Nicho"))
+
+    def test_aula_que_nunca_comecou_nao_e_pulada(self):
+        self.assertFalse(maratona._ja_gravada("curso-x", "Aula 9"))
+
+    def test_espaco_em_disco_e_conferido_antes(self):
+        """Encher o disco na aula 30 custa as trinta seguintes."""
+        self.assertEqual(maratona._espaco_curto(), "",
+                         "há espaço nesta máquina; não devia reclamar")
+        antes = maratona.MINIMO_LIVRE_GB
+        maratona.MINIMO_LIVRE_GB = 10_000_000     # nenhum disco tem isso
+        try:
+            self.assertIn("Libere espaço", maratona._espaco_curto())
+        finally:
+            maratona.MINIMO_LIVRE_GB = antes
+
+
 class TestEstado(unittest.TestCase):
 
     def setUp(self):
