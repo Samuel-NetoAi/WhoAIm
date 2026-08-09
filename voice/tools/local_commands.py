@@ -136,6 +136,10 @@ AJUDA = """# Comandos (funcionam sem créditos)
 - **`como está a aula`** — confirma se ainda está gravando e há quanto tempo
 - **`guarda essa tela`** — print na hora, quando aparecer algo que importa
 - durante a aula: *"Ômega, o que ele acabou de dizer?"*
+- **`assistir o curso inteiro`** — eu abro aula por aula sozinho, dou play,
+  gravo e passo para a próxima. Você precisa estar logado no curso na minha
+  janela (`login curso`). Enquanto rodar, não toque outro áudio no PC: eu
+  gravo o som que SAI daqui. **`como está o curso`** / **`parar o curso`**
 - **`processar curso`** — transcreve e extrai as regras *(demora; avisa no fim)*
 - **`revisar regras`** — mostra as regras propostas com a aula e o minuto;
   **`aprovar todas`** / **`aprovar 1 3`** / **`descartar 2`**
@@ -307,6 +311,37 @@ def _e_fim_de_aula(baixo: str) -> bool:
                for p in palavras):
         return False
     return any(p in _FIM_DE_AULA for p in palavras)
+
+
+# Assistir O CURSO é diferente de assistir UMA aula, e a diferença é a
+# palavra que ele usa. "assistir aula 2" grava o que está na tela agora;
+# "assistir o curso" é a maratona — o OMEGA abre aula por aula sozinho.
+# Por isso a regra é a presença de "curso" SEM "aula": é assim que ele fala,
+# e evita que um pedido de gravar uma aula dispare três horas de navegação.
+_TUDO = ("inteiro", "inteira", "todo", "toda", "todos", "todas", "completo",
+         "sozinho", "sozinha", "tudo", "maratona", "maratonar", "seguido")
+
+
+def _e_maratona(baixo: str) -> bool:
+    palavras = [_norm(p) for p in baixo.split()]
+    if any(p in ("maratona", "maratonar") for p in palavras):
+        return True
+    if "curso" not in palavras:
+        return False
+    if any(p in _FIM_DE_AULA for p in palavras):
+        return False
+    if not any(_casar_verbo(p, _VERBOS_DE_AULA) for p in palavras):
+        return False
+    # "assistir o curso" já basta; "aula" no meio devolve para a gravação
+    # avulsa, que é o comando mais específico.
+    return not any(p in ("aula", "aulas") for p in palavras) or \
+        any(p in _TUDO for p in palavras)
+
+
+def _e_parar_maratona(baixo: str) -> bool:
+    palavras = [_norm(p) for p in baixo.split()]
+    return (any(p in ("curso", "maratona") for p in palavras)
+            and any(p in _FIM_DE_AULA for p in palavras))
 
 
 def _e_pedido_de_aula(baixo: str) -> bool:
@@ -679,6 +714,32 @@ def handle(text: str, ui) -> str | None:
 
         return _curso.decidir(raw)
 
+    # ----- assistir o CURSO INTEIRO sozinho -----
+    #
+    # Vem antes de tudo que mexe com aula: as frases se parecem ("assistir o
+    # curso" x "assistir a aula 2") e o efeito é muito diferente — uma grava o
+    # que está na tela, a outra navega por horas de vídeo.
+    if _e_parar_maratona(low):
+        from . import maratona as _mar
+
+        if _mar.rodando():
+            return _mar.parar()
+        # Não está maratonando: o pedido é sobre outra coisa, segue adiante.
+
+    if _disse(low, "curso", "maratona") and _disse(
+            low, "como esta", "como vai", "situacao", "status", "andamento"):
+        from . import maratona as _mar
+
+        if _mar.rodando():
+            return _mar.situacao()
+
+    if _e_maratona(low):
+        from . import maratona as _mar
+
+        # Se ele colar o link junto, aproveito e guardo.
+        achado = re.search(r"https?://\S+", raw)
+        return _mar.iniciar(achado.group(0) if achado else "", ui)
+
     # ----- assistir aula do curso junto com ele -----
     #
     # Ninguém fala "assistir aula". Fala "vamos começar a assistir a aula de
@@ -862,6 +923,22 @@ def handle(text: str, ui) -> str | None:
         return _postar(alvo, ui)
 
     if verbo in ("login", "entrar", "logar"):
+        # O curso não é uma "rede" com URL fixa: é o link que ele me passou.
+        # Sem este desvio, `login curso` cairia em "não conheço essa rede" e
+        # ele não teria como deixar a sessão salva no meu perfil — que é a
+        # única forma de eu assistir o curso, já que senha não passa por aqui.
+        if _norm(alvo).strip() in ("curso", "kiwify", "aula", "aulas"):
+            from . import maratona as _mar
+
+            url = _mar.url_salva()
+            if not url:
+                return ("Não tenho o link do curso. Cole ele aqui uma vez que "
+                        "eu guardo.")
+            resposta = _navegador.abrir_url(url)
+            return (resposta if resposta.startswith("Não consegui") else
+                    "Curso aberto. Entre com a sua conta nessa janela — eu não "
+                    "vejo nem guardo senha. Depois a sessão fica salva e eu já "
+                    "abro logado.")
         return _navegador.login(alvo)
 
     if verbo in _VERBOS_DE_IMAGEM:

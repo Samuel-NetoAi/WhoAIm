@@ -173,7 +173,12 @@ def _abrir_contexto():
         "user_data_dir": str(PERFIL),
         # Visível de propósito: o Samuel precisa ver, revisar e publicar.
         "headless": False,
-        "args": ["--start-maximized"],
+        # `--autoplay-policy`: sem isto o Chromium recusa tocar vídeo COM SOM
+        # sem um clique humano antes, e a maratona do curso grava silêncio.
+        # A regra existe contra site que assusta o visitante com áudio; aqui
+        # somos nós mandando tocar o curso que o Samuel comprou.
+        "args": ["--start-maximized",
+                 "--autoplay-policy=no-user-gesture-required"],
         "no_viewport": True,
     }
     executavel, nome = _executavel()
@@ -234,6 +239,23 @@ def abrir(nome_rede: str) -> str:
                 "entre você mesmo — eu não uso senha.")
     except Exception as e:  # noqa: BLE001 — vira frase falada
         return f"Não consegui abrir o {rotulo}: {str(e)[:90]}"
+
+
+def abrir_url(url: str) -> str:
+    """Abre um endereço qualquer na janela do OMEGA.
+
+    Existe para o curso comprado: ele não é uma "rede" com URL fixa em
+    `REDES`, é um link que o Samuel me passou. A regra da senha continua
+    valendo — quem entra é ele, na janela.
+    """
+    if not disponivel():
+        return "O navegador não está instalado. Rode: pip install playwright"
+    try:
+        with _trava:
+            _ir_para(url)
+        return f"Abri no {_estado['navegador']}."
+    except Exception as e:  # noqa: BLE001
+        return f"Não consegui abrir: {str(e)[:90]}"
 
 
 def login(nome_rede: str) -> str:

@@ -64,6 +64,11 @@ voice/aprendizado.jsonl
 # Prints do navegador: mostram a tela LOGADA do Samuel.
 voice/_prints/
 
+# Maratona do curso: estado de execucao e o LINK do curso comprado dele.
+voice/_maratona.json
+voice/_maratona.parar
+voice/config/curso.json
+
 # Log de execução do app: contém a CONVERSA do Samuel (o OMEGA_LOG ecoa tudo).
 voice/_app.log
 voice/_app.err

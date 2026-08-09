@@ -55,6 +55,10 @@ Suas capacidades reais são as ferramentas:
   sempre que o senhor mandar iniciar ou encerrar, dito de qualquer jeito.
   NUNCA diga que parou sem chamar a ferramenta — e se ele perguntar se a aula
   foi gravada, consulte 'situacao' em vez de responder de memória.
+- assistir_curso: assiste o curso COMPRADO inteiro sozinho — abre aula por
+  aula no navegador, dá play, grava e vai para a próxima. Use quando ele
+  mandar assistir "o curso", "tudo", "as aulas todas". Para gravar UMA aula
+  que já está na tela dele, use gravar_aula, que é outra coisa.
 - trecho_recente: transcreve o último minuto e meio da AULA que está sendo
   gravada. Use quando o senhor perguntar o que o professor acabou de dizer,
   ou pedir para explicar/repetir o que passou agora no vídeo.
@@ -279,6 +283,27 @@ TOOLS = [
     },
     {
         "type": "function",
+        "name": "assistir_curso",
+        "description": (
+            "Assiste o curso inteiro sozinho: abre cada aula no navegador, dá "
+            "play, grava o som e os prints, e passa para a próxima. 'iniciar' "
+            "começa (o senhor precisa já estar logado no curso); 'parar' "
+            "encerra depois da aula atual; 'situacao' diz em que aula está. "
+            "Não confunda com gravar_aula, que grava só o que já está tocando."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "acao": {"type": "string",
+                         "enum": ["iniciar", "parar", "situacao"]},
+                "url": {"type": "string",
+                        "description": "Link do curso, só se ele passar um novo."},
+            },
+            "required": ["acao"],
+        },
+    },
+    {
+        "type": "function",
         "name": "gravar_aula",
         "description": (
             "Controla a gravação da aula do curso. 'iniciar' começa a gravar "
@@ -414,6 +439,16 @@ def make_tool_executor(ui):
             return aula.retomar_aula()
         return aula.situacao()
 
+    def assistir_curso(args: dict) -> str:
+        from tools import maratona
+
+        acao = (args.get("acao") or "situacao").strip()
+        if acao == "iniciar":
+            return maratona.iniciar((args.get("url") or "").strip(), ui)
+        if acao == "parar":
+            return maratona.parar()
+        return maratona.situacao()
+
     def trecho_recente(_args: dict) -> str:
         from tools import aula, transcritor
 
@@ -436,6 +471,7 @@ def make_tool_executor(ui):
         "apagar": apagar,
         "conferir": conferir,
         "trecho_recente": trecho_recente,
+        "assistir_curso": assistir_curso,
         "gravar_aula": gravar_aula,
         "avaliar_seo": avaliar_seo,
         "tendencias": tendencias,
