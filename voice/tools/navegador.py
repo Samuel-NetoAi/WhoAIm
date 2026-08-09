@@ -191,7 +191,37 @@ def _abrir_contexto():
     _estado["navegador"] = nome or "Chromium"
     contexto = pw.chromium.launch_persistent_context(**opcoes)
     _estado.update({"playwright": pw, "contexto": contexto})
+    _limpar_abas(contexto)
     return contexto
+
+
+def _limpar_abas(contexto) -> None:
+    """Fecha o que o Brave restaurou da sessão anterior.
+
+    Ele reabre as abas do último fechamento, e elas se ACUMULAM: uma sessão de
+    testes deixou quatorze abas, quase todas na tela de login do curso. Todas
+    recarregam juntas na abertura e disputam a mesma revalidação de sessão —
+    que é a suspeita mais forte para a recusa intermitente da Kiwify ("1 em 4"
+    medido). Fora isso, cada aba viva consome memória por horas de maratona.
+
+    Guardamos UMA e fechamos o resto: quem escolhe a aba de trabalho é o
+    `_nossa_pagina`, e ela precisa ser a única.
+    """
+    try:
+        paginas = list(contexto.pages)
+    except Exception:  # noqa: BLE001
+        return
+    # Prefere uma aba de verdade à `about:blank`, para não recarregar à toa.
+    fica = next((p for p in paginas if (p.url or "about:blank") != "about:blank"),
+                paginas[0] if paginas else None)
+    for p in paginas:
+        if p is fica:
+            continue
+        try:
+            p.close()
+        except Exception:  # noqa: BLE001
+            pass
+    _estado["pagina"] = fica
 
 
 def _nossa_pagina():

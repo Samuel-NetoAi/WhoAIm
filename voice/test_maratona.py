@@ -314,6 +314,78 @@ class TestPuloPeloLogin(unittest.TestCase):
         self.assertFalse(maratona._assentar(Vazia(), 10))
 
 
+class TestReentrarSemSenha(unittest.TestCase):
+    """Ele perguntou: "se deslogar de madrugada, pode entrar com a senha
+    salva?". Pode — desde que a senha nunca passe por mim."""
+
+    class Pag:
+        url = "https://members.kiwify.com/login?club=x"
+
+        def __init__(self, campos_cheios, clicou=None):
+            self.campos_cheios = campos_cheios
+            self.enviou = False
+            self.clicou = clicou if clicou is not None else []
+
+        def click(self, seletor, timeout=0):
+            self.clicou.append(seletor)
+            if "submit" in seletor or "Entrar" in seletor or "Acessar" in seletor:
+                self.enviou = True
+
+        def evaluate(self, script):
+            if "password" in script:
+                return self.campos_cheios
+            return False          # nunca assenta: força chegar no formulário
+
+    def setUp(self):
+        self._time = maratona.time
+        self._nav = sys.modules.get("tools.navegador")
+
+        class Relogio:
+            agora = 0.0
+
+            def sleep(self, s):
+                Relogio.agora += s
+
+            def monotonic(self):
+                return Relogio.agora
+
+            time = staticmethod(__import__("time").time)
+
+        maratona.time = Relogio()
+        self._contexto = self._nav._estado.get("contexto")
+        self._nav._estado["contexto"] = None
+
+    def tearDown(self):
+        maratona.time = self._time
+        self._nav._estado["contexto"] = self._contexto
+
+    def test_NAO_envia_formulario_vazio(self):
+        """Sem o navegador ter preenchido, enviar seria adivinhar senha."""
+        pag = self.Pag(campos_cheios=False)
+        self.assertFalse(maratona._tentar_reentrar(pag))
+        self.assertFalse(pag.enviou, "mandou um formulário que não estava cheio")
+
+    def test_aperta_o_botao_quando_o_navegador_ja_preencheu(self):
+        """O Chromium preenche do perfil dele; eu só clico. A senha não
+        passa por mim, e o preenchimento só ocorre no mesmo endereço em que
+        ela foi salva — trava do navegador, não minha."""
+        pag = self.Pag(campos_cheios=True)
+        maratona._tentar_reentrar(pag)
+        self.assertTrue(pag.enviou)
+
+    def test_sem_botao_de_entrar_nao_inventa_caminho(self):
+        class Nada:
+            url = "https://members.kiwify.com/a/b/c"
+
+            def click(self, *a, **k):
+                raise RuntimeError("não existe")
+
+            def evaluate(self, _):
+                return False
+
+        self.assertFalse(maratona._tentar_reentrar(Nada()))
+
+
 class TestRetomarDepoisDeCair(unittest.TestCase):
     """A pergunta do Samuel: "se der erro de madrugada, perdemos horas?"
 

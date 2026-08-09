@@ -23,6 +23,11 @@ continua sendo gravado, e o estado fica no disco para o app reencontrar.
 
 O QUE ELE NÃO FAZ
 
+NUNCA NAVEGUE PARA `members.kiwify.com/login` DE PROPÓSITO. Eu fiz isso uma
+vez, sondando o formulário, e a própria visita DERRUBOU a sessão salva — o
+Samuel teve que entrar de novo. Para saber se está logado, abra a AULA e veja
+se ela carrega (`_assentar`); a tela de login aparece sozinha quando precisa.
+
 Senha, nunca — a mesma regra de `navegador.py`. O Samuel entra à mão uma vez
 e a sessão fica no perfil. E não clica em "concluir aula" quando existe outro
 jeito de avançar: quem marca a aula como assistida é ele, não eu.
@@ -311,6 +316,86 @@ def _perfil_ocupado() -> bool:
     return navegador.PERFIL.name in (saida or "")
 
 
+def _tentar_reentrar(pagina) -> bool:
+    """Tenta voltar a entrar no curso SEM nunca ver a senha.
+
+    Pedido do Samuel: "se ele deslogar de madrugada, e a minha senha já está
+    salva, ele pode entrar?". Pode, e a razão de eu aceitar é que o segredo
+    não passa por aqui em momento nenhum:
+
+    - a tela de entrada do curso NÃO tem campo de senha; tem um botão que
+      repassa para a conta Kiwify (verificado). Na maioria das vezes a conta
+      ainda está válida e o clique resolve sozinho, sem senha nenhuma.
+    - se aparecer um formulário, eu só APERTO O BOTÃO quando o próprio
+      navegador já preencheu os campos com o que está guardado no perfil dele.
+      Eu não digito, não leio e não guardo credencial — só olho se o campo
+      está vazio ou não. Campo vazio: eu paro e chamo o Samuel.
+
+    O preenchimento é do Chromium, que só oferece a senha no MESMO endereço em
+    que ela foi salva. Essa é a trava que impede um erro de navegação meu de
+    levar a credencial para o lugar errado — e ela não é minha, é do navegador.
+    """
+    from . import navegador
+
+    contexto = navegador._estado.get("contexto")
+    antes = set(contexto.pages) if contexto else set()
+
+    for seletor in ("button:has-text('Fazer login com Kiwify')",
+                    "a:has-text('Fazer login com Kiwify')",
+                    "button:has-text('Entrar')"):
+        try:
+            pagina.click(seletor, timeout=5000)
+            _anotar("cliquei em entrar de novo (sem senha)")
+            break
+        except Exception:  # noqa: BLE001
+            continue
+    else:
+        return False
+
+    # O repasse abre OUTRA ABA (dashboard.kiwify.com/sso). Sem segui-la, eu
+    # ficava olhando a página velha e concluía "formulário vazio" sobre uma
+    # tela que nem tinha formulário. Verificado na Kiwify real.
+    formulario = pagina
+    for _ in range(10):
+        time.sleep(3)
+        if _assentar(pagina, 3):
+            _anotar("voltei a entrar sozinho, sem senha nenhuma")
+            return True
+        novas = [p for p in (contexto.pages if contexto else []) if p not in antes]
+        if novas:
+            formulario = novas[-1]
+            break
+
+    # Sobrou um formulário. Só sigo se o NAVEGADOR já o tiver preenchido.
+    try:
+        cheio = formulario.evaluate("""() => {
+            const s = document.querySelector('input[type=password]');
+            const u = document.querySelector(
+                'input[type=email], input[type=text]');
+            return !!s && (s.value || '').length > 0
+                       && !!u && (u.value || '').length > 0;
+        }""")
+    except Exception:  # noqa: BLE001 — a aba do repasse fecha sozinha quando
+        cheio = False   # a conta também está deslogada
+    if not cheio:
+        _anotar("o formulário veio vazio — não invento senha, paro aqui")
+        return False
+
+    _anotar("o navegador preencheu do perfil; eu só apertei o botão")
+    for seletor in ("button[type=submit]", "button:has-text('Entrar')",
+                    "button:has-text('Acessar')"):
+        try:
+            formulario.click(seletor, timeout=5000)
+            break
+        except Exception:  # noqa: BLE001
+            continue
+    for _ in range(10):
+        time.sleep(3)
+        if _assentar(pagina, 3):
+            return True
+    return False
+
+
 TENTATIVAS_POR_PAGINA = 4
 
 
@@ -346,7 +431,11 @@ def _abrir_curso(pagina, url: str, tentativas: int = TENTATIVAS_POR_PAGINA,
 
         if _assentar(pagina, 40):
             return pagina, True
-        _anotar(f"a Kiwify pediu login na tentativa {n} — recarregando")
+        _anotar(f"a Kiwify pediu login na tentativa {n}")
+        # Da segunda em diante, antes de só recarregar, tenta de fato entrar:
+        # se a sessão caiu mesmo, recarregar mil vezes não traz ela de volta.
+        if n >= 2 and _tentar_reentrar(pagina):
+            return pagina, True
         time.sleep(5)
 
     if relancar:
