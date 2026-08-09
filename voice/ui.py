@@ -1689,6 +1689,8 @@ class MainWindow(QMainWindow):
         ("ver navegador", "print do que ele vê"),
         ("ensinar X é Y", "corrige o que ele ouve"),
         ("imagem <descrição>", "gera imagem (OpenAI)"),
+        ("modo conversa", "voz em tempo real (gasta cota)"),
+        ("modo econômico", "volta ao local (poupa cota)"),
         ("tendências", "o que está em alta"),
         ("— curso —", None),
         ("assistir a aula de X", "grava a aula do curso"),

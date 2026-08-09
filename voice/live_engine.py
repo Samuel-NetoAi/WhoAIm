@@ -65,6 +65,10 @@ _SINAIS_DE_COTA = ("1008", "429", "resource_exhausted", "quota",
                    "policy violation", "operation was aborted")
 
 
+class _TrocaDeMotor(Exception):
+    """Não é erro: o Samuel pediu outro motor."""
+
+
 def _e_falta_de_cota(razao: str) -> bool:
     baixo = (razao or "").lower()
     return any(s in baixo for s in _SINAIS_DE_COTA)
@@ -448,7 +452,13 @@ class LiveEngine:
 
     async def _bombear_microfone(self, ws) -> None:
         """Do microfone para o modelo, em pedaços de 100 ms."""
+        from tools import motor as _motor
+
         while not self._parar.is_set():
+            if _motor.quer_trocar():
+                # Pedido de troca: encerra a sessão para o main.py subir o
+                # outro motor. Erguer é mais limpo que sinalizar de fora.
+                raise _TrocaDeMotor()
             try:
                 pedaco = self._entrada.get_nowait()
             except queue.Empty:
@@ -560,6 +570,10 @@ class LiveEngine:
                 try:
                     laco.run_until_complete(self._sessao())
                     falhas = 0
+                except _TrocaDeMotor:
+                    # Saída pedida, não falha: o main.py sobe o outro motor.
+                    self.motivo_da_queda = ""
+                    return True
                 except Exception as e:  # noqa: BLE001
                     falhas += 1
                     razao = str(e)[:160]

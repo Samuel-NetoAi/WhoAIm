@@ -514,8 +514,13 @@ def escolher_motor(cfg: dict) -> str:
     modo = (cfg.get("engine") or "auto").strip().lower()
     if modo in ("free", "realtime", "live"):
         return modo
+    # O PADRÃO É O LOCAL, e a razão é cota. O Live cobra pelo ÁUDIO — uma
+    # troca curta medida aqui deu 436 tokens, e ele consome enquanto ouve.
+    # Na camada gratuita isso estoura no meio da sessão. O local manda texto,
+    # e a maior parte do uso do Samuel são COMANDOS, que nem precisam de
+    # conversa. O Live sobe sob demanda: "modo conversa".
     if cfg.get("gemini_api_key"):
-        return "live"
+        return "free"
     return "realtime" if openai_tem_saldo(cfg.get("openai_api_key", "")) else "free"
 
 
@@ -525,64 +530,81 @@ def main() -> None:
 
     def runner():
         ui.wait_for_api_key()
+        from tools import motor as arbitro
+
         motor = escolher_motor(cfg)
 
-        if motor == "live":
-            from live_engine import LiveEngine
+        # LAÇO DE MOTORES. Antes o runner escolhia um e ficava nele até
+        # fechar o app. Agora o Samuel troca em pleno voo ("modo conversa" /
+        # "modo econômico"), e cada motor sai limpo quando o outro é pedido.
+        while True:
+            pedido = arbitro.consumir_pedido()
+            if pedido:
+                motor = pedido
+            arbitro.definir_atual(motor)
 
-            ui.write_log("SYS: voz em tempo real (Gemini Live) — abrindo...")
-            engine = LiveEngine(
-                gemini_key=cfg.get("gemini_api_key", ""),
-                instructions=INSTRUCTIONS,
-                tool_executor=make_tool_executor(ui),
-                ui=ui,
-                local_handler=handle_local_command,
-                tools=TOOLS,
-            )
-            ligar_avisos(ui, engine)
-            try:
-                if engine.run():
+            if motor == "live":
+                from live_engine import LiveEngine
+
+                ui.write_log("SYS: voz em tempo real (Gemini Live) — abrindo...")
+                engine = LiveEngine(
+                    gemini_key=cfg.get("gemini_api_key", ""),
+                    instructions=INSTRUCTIONS,
+                    tool_executor=make_tool_executor(ui),
+                    ui=ui,
+                    local_handler=handle_local_command,
+                    tools=TOOLS,
+                )
+                ligar_avisos(ui, engine)
+                try:
+                    ok = engine.run()
+                except KeyboardInterrupt:
+                    print("\nEncerrando...")
                     return
-            except KeyboardInterrupt:
-                print("\nEncerrando...")
-                return
-            # Caiu. Em vez de morrer, continua no motor local — e diz por quê,
-            # senão a troca de voz no meio do dia parece defeito.
-            motivo = engine.motivo_da_queda or "a voz em tempo real não abriu"
-            # Dizer "seguindo pelo motor local (Whisper + Gemini + ...)" quando
-            # o que acabou foi justamente a cota do GEMINI é enganoso: o motor
-            # local usa o mesmo cérebro. Só os comandos locais sobrevivem.
-            if "cota" in motivo.lower():
-                ui.write_log(
-                    "SYS: a cota gratuita do Gemini acabou — a voz em tempo "
-                    "real cai. Os COMANDOS continuam funcionando (pesquisa, "
-                    "roteiro, montar, aula, tendências); só a conversa livre "
-                    "fica esperando a cota voltar, o que costuma levar alguns "
-                    "minutos.")
-            else:
-                ui.write_log(
-                    f"SYS: {motivo} — seguindo pelo motor local "
-                    "(Whisper + Gemini + voz do Windows).")
-            motor = "free"
+                if arbitro.quer_trocar():
+                    continue
+                if ok:
+                    return
+                motivo = engine.motivo_da_queda or "a voz em tempo real não abriu"
+                # Dizer "seguindo pelo motor local (Whisper + Gemini + ...)"
+                # quando o que acabou foi justamente a cota do GEMINI é
+                # enganoso: o motor local usa o mesmo cérebro.
+                if "cota" in motivo.lower():
+                    ui.write_log(
+                        "SYS: a cota gratuita do Gemini acabou — a voz em "
+                        "tempo real cai. Os COMANDOS continuam funcionando "
+                        "(pesquisa, roteiro, montar, aula, tendências); só a "
+                        "conversa livre espera a cota voltar.")
+                else:
+                    ui.write_log(f"SYS: {motivo} — voltando ao motor local.")
+                motor = "free"
+                continue
 
-        if motor == "free":
-            ui.write_log("SYS: motor GRATUITO (Vosk + Gemini + voz do Windows).")
-            engine = FreeEngine(
-                gemini_key=cfg.get("gemini_api_key", ""),
-                instructions=INSTRUCTIONS,
-                tool_executor=make_tool_executor(ui),
-                ui=ui,
-                local_handler=handle_local_command,
-                # As MESMAS ferramentas da Realtime: sem elas o Gemini só
-                # conversava e dizia ter executado o que nunca rodou.
-                tools=TOOLS,
-            )
-            ligar_avisos(ui, engine)
-            try:
-                engine.run()  # o motor gratuito já trata local antes do Gemini
-            except KeyboardInterrupt:
-                print("\nEncerrando...")
-            return
+            if motor == "free":
+                ui.write_log(
+                    "SYS: motor local (Whisper + Gemini + voz do Windows) — "
+                    "econômico. Diga 'modo conversa' para a voz em tempo real.")
+                engine = FreeEngine(
+                    gemini_key=cfg.get("gemini_api_key", ""),
+                    instructions=INSTRUCTIONS,
+                    tool_executor=make_tool_executor(ui),
+                    ui=ui,
+                    local_handler=handle_local_command,
+                    # As MESMAS ferramentas da Realtime: sem elas o Gemini só
+                    # conversava e dizia ter executado o que nunca rodou.
+                    tools=TOOLS,
+                )
+                ligar_avisos(ui, engine)
+                try:
+                    engine.run()  # trata comando local antes do Gemini
+                except KeyboardInterrupt:
+                    print("\nEncerrando...")
+                    return
+                if arbitro.quer_trocar():
+                    continue
+                return
+
+            break
 
         ui.write_log("SYS: motor OpenAI Realtime (voz nativa).")
         engine = RealtimeEngine(

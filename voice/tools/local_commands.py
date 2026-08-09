@@ -112,6 +112,13 @@ AJUDA = """# Comandos (funcionam sem créditos)
 - **`ver navegador`** — print da tela do navegador aqui dentro, para você
   acompanhar sem procurar a janela do Chrome
 
+**Modo de conversa** (o padrão é o econômico)
+- **`modo conversa`** — liga a voz em tempo real: ele ouve o áudio direto, dá
+  para interromper, é bem mais fluido. **Gasta bastante cota** do Gemini
+- **`modo econômico`** — volta ao local: menos fluido, mas a cota rende muito
+  mais, e os comandos funcionam igual
+- **`qual motor`** — diz em qual dos dois você está
+
 **Escolher a próxima criatura**
 - **`tendências`** — o que está sendo buscado no YouTube e o que está em
   ascensão no Google, já separando o que o canal ainda não tem. Vale também
@@ -219,6 +226,16 @@ _VERBOS_DE_AULA = {"assistir", "assiste", "assistindo", "gravar", "grava",
 # antes, senão "parar a aula" abriria outra gravação.
 _FIM_DE_AULA = ("parar", "para", "pare", "terminar", "termina", "acabou",
                 "encerrar", "encerra", "fim", "chega")
+
+
+# "modo conversa", "muda para o modo conversa", "entra no modo conversa"...
+# A palavra "modo" (ou "motor") é obrigatória: sem ela, "vamos conversar"
+# viraria troca de motor em vez de conversa.
+def _quer_modo(baixo: str, alvos: tuple[str, ...]) -> bool:
+    palavras = [_norm(p) for p in baixo.split()]
+    if not any(p in ("modo", "motor") for p in palavras):
+        return False
+    return any(_norm(a) in palavras for a in alvos)
 
 
 def _e_fim_de_aula(baixo: str) -> bool:
@@ -526,6 +543,31 @@ def handle(text: str, ui) -> str | None:
     # nunca seja interpretado como outra coisa.
     if low in ("parar", "para", "chega", "silencio", "silêncio", "cala"):
         return _leitura.parar()
+
+    # ----- trocar o motor de voz em pleno voo -----
+    #
+    # O padrão é o local, que é econômico. O Live é mais gostoso de usar e
+    # gasta bem mais cota, então sobe só quando ele pedir.
+    if _quer_modo(low, ("conversa", "conversar", "live", "tempo real",
+                        "natural", "fluido")):
+        from . import motor as _motor
+
+        return _motor.pedir("live")
+
+    if _quer_modo(low, ("economico", "econômico", "economia", "local",
+                        "poupar", "economizar", "normal")):
+        from . import motor as _motor
+
+        return _motor.pedir("free")
+
+    if low in ("qual motor", "que motor", "modo atual", "qual modo"):
+        from . import motor as _motor
+
+        atual = _motor.atual()
+        return (f"Estou no {_motor.NOMES.get(atual, atual)}. "
+                + ("Diga 'modo econômico' para poupar cota."
+                   if atual == "live" else
+                   "Diga 'modo conversa' para a voz em tempo real."))
 
     # ----- o que esta em alta -----
     if low in ("tendencias", "tendências", "em alta", "o que esta em alta",

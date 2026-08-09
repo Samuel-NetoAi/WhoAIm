@@ -490,6 +490,12 @@ class FreeEngine:
                 try:
                     dados = self._fila.get(timeout=0.5)
                 except queue.Empty:
+                    # Pedido de troca de motor: sair aqui é limpo, o stream
+                    # fecha sozinho no `with` e o main.py sobe o outro.
+                    from tools import motor as _motor
+
+                    if _motor.quer_trocar():
+                        return
                     continue
                 # O Whisper transcreve a frase INTEIRA, não pedaço a pedaço
                 # como o Vosk: o detector acumula até o silêncio fechar.
