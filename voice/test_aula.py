@@ -177,6 +177,91 @@ class TestFalaNatural(unittest.TestCase):
                          "aula sem nome")
 
 
+class TestApagarAula(unittest.TestCase):
+    """Nasceu de um caso real: ele parou a aula 2 no minuto 9 de 13.
+
+    "Continuar" não existe depois de encerrar, então a saída é regravar — e
+    sem apagar a tentativa anterior ficariam DUAS pastas do mesmo assunto,
+    que a extração de regras leria como aulas diferentes.
+
+    Regra do projeto (tools/apagar.py): dois passos, e nada é destruído.
+    """
+
+    def setUp(self):
+        import tempfile
+
+        self.tmp = tempfile.TemporaryDirectory()
+        base = Path(self.tmp.name)
+        self._cursos, self._lixeira = aula.CURSOS, aula._LIXEIRA
+        aula.CURSOS = base / "Cursos"
+        aula._LIXEIRA = base / "_lixeira"
+        self.raiz = aula.CURSOS / "teste" / "aulas"
+        for nome in ("20260101-1000-aula-2", "20260102-1100-aula-2",
+                     "20260103-1200-aula-3"):
+            (self.raiz / nome / "telas").mkdir(parents=True)
+            (self.raiz / nome / "audio.wav").write_bytes(bytes(5000))
+        aula._a_apagar.clear()
+
+    def tearDown(self):
+        import shutil
+
+        aula.CURSOS, aula._LIXEIRA = self._cursos, self._lixeira
+        aula._a_apagar.clear()
+        shutil.rmtree(self.tmp.name, ignore_errors=True)
+
+    def _restantes(self):
+        return sorted(d.name for d in self.raiz.iterdir())
+
+    def test_preparar_nao_apaga_nada(self):
+        r = aula.preparar_exclusao("aula 2", "teste")
+        self.assertIn("Isto some", r)
+        self.assertEqual(len(self._restantes()), 3, "apagou no primeiro passo")
+
+    def test_pega_TODAS_as_gravacoes_do_mesmo_assunto(self):
+        """Regravar deixa duas pastas; apagar só uma não resolve nada."""
+        r = aula.preparar_exclusao("aula 2", "teste")
+        self.assertIn("20260101-1000-aula-2", r)
+        self.assertIn("20260102-1100-aula-2", r)
+        aula.confirmar_exclusao()
+        self.assertEqual(self._restantes(), ["20260103-1200-aula-3"])
+
+    def test_vai_para_a_lixeira_e_nao_para_o_vazio(self):
+        aula.preparar_exclusao("aula 2", "teste")
+        aula.confirmar_exclusao()
+        salvas = list(aula._LIXEIRA.rglob("audio.wav"))
+        self.assertEqual(len(salvas), 2, "não deu para voltar atrás")
+
+    def test_cancelar_preserva(self):
+        aula.preparar_exclusao("aula 2", "teste")
+        self.assertIn("Cancelado", aula.cancelar_exclusao())
+        self.assertEqual(len(self._restantes()), 3)
+
+    def test_confirmar_sem_pedido_devolve_none(self):
+        """None deixa o 'confirmar' seguir para o próximo dono."""
+        self.assertIsNone(aula.confirmar_exclusao())
+        self.assertIsNone(aula.cancelar_exclusao())
+
+    def test_nao_apaga_o_que_nao_existe(self):
+        self.assertIn("Não achei", aula.preparar_exclusao("aula 77", "teste"))
+
+    def test_nao_apaga_enquanto_grava(self):
+        aula._estado["gravando"] = True
+        try:
+            self.assertIn("Diga 'parar aula'",
+                          aula.preparar_exclusao("aula 2", "teste"))
+        finally:
+            aula._estado["gravando"] = False
+
+    def test_confirmacao_expira(self):
+        """Um 'confirmar' solto meia hora depois não pode apagar aula."""
+        import time as _t
+
+        aula.preparar_exclusao("aula 2", "teste")
+        aula._a_apagar["quando"] = _t.monotonic() - aula.EXPIRA_CONFIRMACAO - 1
+        self.assertIn("expirou", aula.confirmar_exclusao())
+        self.assertEqual(len(self._restantes()), 3)
+
+
 @unittest.skipUnless(tem_captura(), "sem captura de áudio do PC")
 class TestGravacaoReal(unittest.TestCase):
     def setUp(self):

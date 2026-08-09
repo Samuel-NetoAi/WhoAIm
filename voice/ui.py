@@ -1699,6 +1699,7 @@ class MainWindow(QMainWindow):
         ("continuar a aula", "voltou a tocar"),
         ("parar aula", "encerra a gravação"),
         ("como está a aula", "confirma se está gravando"),
+        ("apagar a aula X", "descarta uma gravação"),
         ("processar curso", "transcreve e tira as regras"),
         ("revisar regras", "aprova o que vai valer"),
         ("— produção —", None),

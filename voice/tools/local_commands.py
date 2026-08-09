@@ -139,6 +139,10 @@ AJUDA = """# Comandos (funcionam sem créditos)
 - **`processar curso`** — transcreve e extrai as regras *(demora; avisa no fim)*
 - **`revisar regras`** — mostra as regras propostas com a aula e o minuto;
   **`aprovar todas`** / **`aprovar 1 3`** / **`descartar 2`**
+- **`apagar a aula 2`** → depois **`confirmar`**. Serve para quando você teve
+  que interromper no meio e vai regravar: sem apagar, ficam duas pastas do
+  mesmo assunto e a extração de regras lê as duas como aulas diferentes.
+  Vai para a lixeira, dá para voltar atrás
 - **`curso <nome>`** — troca o curso atual
 - Depois de aprovadas, elas guiam o SEO do canal — e ele **discorda** de você
   citando a aula quando você propuser algo contra
@@ -316,6 +320,16 @@ def _e_pedido_de_aula(baixo: str) -> bool:
 
 # Palavras que dizem COMO fazer, e não O QUE é a aula. Tirá-las é o que
 # transforma "vamos começar a assistir a aula de miniatura" em "miniatura".
+# Palavras que dizem O QUE FAZER, não QUAL aula. Tirá-las é o que
+# transforma "vamos apagar a aula 2" em "aula 2".
+_LIXO_AO_APAGAR = {
+    "apagar", "apaga", "apague", "deletar", "deleta", "delete", "excluir",
+    "exclui", "exclua", "remover", "remove", "descartar", "descarta",
+    "jogar", "fora", "lixo", "vamos", "quero", "queria", "pode", "podemos",
+    "por", "favor", "a", "o", "as", "os", "da", "do", "de", "essa", "esse",
+    "aquela", "aquele", "toda", "todo", "inteira", "omega", "senhor",
+}
+
 _LIXO_NO_TITULO = _VERBOS_DE_AULA | {
     "vamos", "vou", "quero", "queria", "agora", "ai", "aí", "entao", "então",
     "a", "o", "as", "os", "de", "do", "da", "uma", "um", "essa", "esse",
@@ -692,6 +706,19 @@ def handle(text: str, ui) -> str | None:
     # não casava com nenhuma delas. A aula ficou gravando enquanto ele
     # repetia o pedido de quatro formas diferentes. Eu já tinha corrigido o
     # lado de ABRIR e deixei o de FECHAR com o mesmo defeito.
+    # Apagar aula vem ANTES de tudo que mexe com aula: "apagar a aula 2"
+    # contém "aula", e sem esta ordem viraria início ou fim de gravação.
+    if _disse(low, "aula", "aulas") and _disse(
+            low, "apagar", "apaga", "deletar", "deleta", "excluir", "exclui",
+            "remover", "remove", "jogar fora", "descartar"):
+        from . import aula as _aula
+
+        # Sobra o que identifica a aula ("aula 2"). Palavra INTEIRA: sem os
+        # limites, o "a" da lista casaria dentro de "aula" e sobraria "ul 2".
+        alvo = " ".join(x for x in low.split()
+                        if _norm(x.strip(",.!?")) not in _LIXO_AO_APAGAR)
+        return _aula.preparar_exclusao(" ".join(alvo.split()) or "aula")
+
     # PAUSA vem antes de ENCERRAR: "pausa a aula" contém "aula", e sem esta
     # ordem cairia no encerramento e perderia o resto do vídeo.
     if _e_pausa_de_aula(low):
@@ -766,12 +793,26 @@ def handle(text: str, ui) -> str | None:
         esquecer = getattr(ui, "esquecer", None)
         return esquecer() if esquecer else "Nada guardado por aqui."
 
-    if low in ("confirmar", "confirma", "confirmado", "pode apagar", "sim apaga"):
+    # "confirmar" e "cancelar" são compartilhados por três donos (narração
+    # cara, exclusão de aula, exclusão de projeto). Cada um responde None
+    # quando não tem nada pendente, e a ordem aqui é do mais leve ao mais
+    # destrutivo — apagar projeto fica por último, de propósito.
+    if _disse(low, "confirmar", "confirma", "confirmado", "pode apagar"):
         narracao = _leitura.confirmar_narracao()
         if narracao is not None:
             return narracao
+        from . import aula as _aula
+
+        aula_apagada = _aula.confirmar_exclusao()
+        if aula_apagada is not None:
+            return aula_apagada
         return _apagar.confirmar()
-    if low in ("cancelar", "cancela", "deixa", "esquece", "nao apaga", "não apaga"):
+    if _disse(low, "cancelar", "cancela", "deixa", "nao apaga", "não apaga"):
+        from . import aula as _aula
+
+        cancelada = _aula.cancelar_exclusao()
+        if cancelada is not None:
+            return cancelada
         return _apagar.cancelar()
 
     if _disse(low, "andamento", "pipeline"):

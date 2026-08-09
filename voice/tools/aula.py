@@ -35,6 +35,7 @@ a extração de regras trataria isso como conteúdo do curso. Ver `pausar()`.
 from __future__ import annotations
 
 import re
+import shutil
 import threading
 import time
 import unicodedata
@@ -604,6 +605,95 @@ def parar() -> str:
             f"{prints} telas, salvo em {pasta.name}. "
             "Diga 'processar curso' quando quiser as regras — leva menos de um "
             "minuto por hora de aula.")
+
+
+# ---------- apagar uma aula ----------
+#
+# Nasceu de um caso real: o Samuel teve que interromper a aula 2 no minuto 9
+# de 13, e não adianta "continuar" — a gravação já fechou. Regravar por cima
+# deixaria duas pastas do mesmo assunto, e na hora de extrair regras o Claude
+# leria as duas como se fossem aulas diferentes.
+#
+# Segue a regra do projeto (tools/apagar.py): DOIS PASSOS e NADA É DESTRUÍDO.
+# Vai para a pasta _lixeira, de onde dá para voltar atrás.
+
+_LIXEIRA = AI_PROJECT_ROOT / "_lixeira"
+EXPIRA_CONFIRMACAO = 120.0
+_a_apagar: dict = {}
+
+
+def _achar_aulas(alvo: str, curso: str | None = None) -> list[Path]:
+    """Pastas cujo nome bate com o que ele disse. Casamento por TRECHO.
+
+    Uma aula pode ter sido gravada duas vezes (foi o que aconteceu), então
+    isto devolve TODAS as que batem — apagar só uma deixaria a outra para
+    confundir a extração depois.
+    """
+    alvo = _slug(alvo)
+    if not alvo:
+        return []
+    raiz = CURSOS / (curso or curso_atual()) / "aulas"
+    if not raiz.is_dir():
+        return []
+    # O nome da pasta é "20260809-0947-aula-2": o trecho falado ("aula 2")
+    # aparece no fim, depois da data.
+    return sorted(p for p in raiz.iterdir()
+                  if p.is_dir() and alvo in _slug(p.name))
+
+
+def preparar_exclusao(alvo: str, curso: str | None = None) -> str:
+    """Passo 1: mostra o que sumiria. NÃO apaga nada."""
+    if _estado["gravando"]:
+        return ("Estou gravando agora. Diga 'parar aula' antes de apagar "
+                "qualquer coisa.")
+    achadas = _achar_aulas(alvo, curso)
+    if not achadas:
+        return (f"Não achei aula com '{alvo}' no curso {curso or curso_atual()}.")
+
+    linhas, total = [], 0.0
+    for pasta in achadas:
+        wav = pasta / "audio.wav"
+        minutos = (wav.stat().st_size - 44) / 2 / TAXA / 60 if wav.exists() else 0
+        telas = len(list((pasta / "telas").glob("*.jpg"))) if (pasta / "telas").is_dir() else 0
+        total += minutos
+        linhas.append(f"{pasta.name} ({minutos:.0f} min, {telas} telas)")
+
+    _a_apagar.update({"pastas": achadas, "quando": time.monotonic()})
+    return (f"Isto some: {'; '.join(linhas)}. "
+            f"São {total:.0f} minuto(s) no total, e vai para a lixeira — dá "
+            "para voltar atrás. Diga 'confirmar' para apagar.")
+
+
+def confirmar_exclusao() -> str | None:
+    """Passo 2. None = não havia nada preparado (deixa outro dono responder)."""
+    if not _a_apagar.get("pastas"):
+        return None
+    if time.monotonic() - _a_apagar.get("quando", 0) > EXPIRA_CONFIRMACAO:
+        _a_apagar.clear()
+        return "A confirmação expirou. Peça de novo, por segurança."
+
+    destino = _LIXEIRA / f"{datetime.now():%Y%m%d-%H%M}-aulas"
+    movidas, erros = [], []
+    for pasta in _a_apagar["pastas"]:
+        try:
+            destino.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(pasta), str(destino / pasta.name))
+            movidas.append(pasta.name)
+        except Exception as e:  # noqa: BLE001
+            erros.append(f"{pasta.name}: {str(e)[:50]}")
+    _a_apagar.clear()
+
+    if not movidas:
+        return f"Não consegui mover: {'; '.join(erros)}"
+    recado = f"Apaguei {len(movidas)} aula(s). Estão em {destino}, se precisar."
+    return recado + (f" Mas falhou em: {'; '.join(erros)}" if erros else "")
+
+
+def cancelar_exclusao() -> str | None:
+    if not _a_apagar.get("pastas"):
+        return None
+    _a_apagar.clear()
+    return "Cancelado, não apaguei nada."
 
 
 def situacao() -> str:
