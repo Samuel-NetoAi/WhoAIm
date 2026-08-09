@@ -293,7 +293,8 @@ TOOLS = [
             "type": "object",
             "properties": {
                 "acao": {"type": "string",
-                         "enum": ["iniciar", "parar", "situacao"]},
+                         "enum": ["iniciar", "parar", "pausar", "retomar",
+                                  "situacao"]},
                 "titulo": {"type": "string",
                            "description": "Nome da aula, só para 'iniciar'."},
             },
@@ -407,6 +408,10 @@ def make_tool_executor(ui):
                                 avisar=ui.write_log)
         if acao == "parar":
             return aula.parar()
+        if acao == "pausar":
+            return aula.pausar_aula()
+        if acao == "retomar":
+            return aula.retomar_aula()
         return aula.situacao()
 
     def trecho_recente(_args: dict) -> str:

@@ -129,6 +129,9 @@ AJUDA = """# Comandos (funcionam sem créditos)
   tela. Fale natural: "começa a aula", "bora assistir aula 4" também valem.
   Ele avisa **de 2 em 2 minutos** que continua gravando, e diz **"PAREI DE
   GRAVAR"** com todas as letras quando você encerrar
+- **`pausa a aula`** — quando você pausar o vídeo. Ele para junto e **congela
+  o relógio**, para o minuto da transcrição continuar batendo com o do vídeo;
+  **`continuar a aula`** volta
 - **`parar aula`** / *"pode parar de gravar"* — encerra
 - **`como está a aula`** — confirma se ainda está gravando e há quanto tempo
 - **`guarda essa tela`** — print na hora, quando aparecer algo que importa
@@ -263,6 +266,30 @@ def _quer_modo(baixo: str, alvos: tuple[str, ...]) -> bool:
     if not any(p in ("modo", "motor") for p in palavras):
         return False
     return any(_norm(a) in palavras for a in alvos)
+
+
+# Pausar o vídeo e ENCERRAR a aula são coisas opostas, e a fala é parecida
+# ("pausa" x "para"). Estas listas ficam separadas de propósito.
+_PAUSA = ("pausar", "pausa", "pause", "pausei", "pausado", "espera", "espere")
+_RETOMADA = ("continuar", "continua", "continue", "retomar", "retoma",
+             "retome", "voltei", "voltar", "volta", "segue", "seguir")
+
+
+def _sobre_a_aula(baixo: str) -> bool:
+    """A frase é sobre a gravação da aula, e não sobre outra coisa?"""
+    palavras = [_norm(p) for p in baixo.split()]
+    return any(p in ("aula", "aulas", "gravacao", "gravando", "gravar",
+                     "grava", "video") for p in palavras)
+
+
+def _e_pausa_de_aula(baixo: str) -> bool:
+    palavras = [_norm(p) for p in baixo.split()]
+    return _sobre_a_aula(baixo) and any(p in _PAUSA for p in palavras)
+
+
+def _e_retomada_de_aula(baixo: str) -> bool:
+    palavras = [_norm(p) for p in baixo.split()]
+    return _sobre_a_aula(baixo) and any(p in _RETOMADA for p in palavras)
 
 
 def _e_fim_de_aula(baixo: str) -> bool:
@@ -665,6 +692,18 @@ def handle(text: str, ui) -> str | None:
     # não casava com nenhuma delas. A aula ficou gravando enquanto ele
     # repetia o pedido de quatro formas diferentes. Eu já tinha corrigido o
     # lado de ABRIR e deixei o de FECHAR com o mesmo defeito.
+    # PAUSA vem antes de ENCERRAR: "pausa a aula" contém "aula", e sem esta
+    # ordem cairia no encerramento e perderia o resto do vídeo.
+    if _e_pausa_de_aula(low):
+        from . import aula as _aula
+
+        return _aula.pausar_aula()
+
+    if _e_retomada_de_aula(low):
+        from . import aula as _aula
+
+        return _aula.retomar_aula()
+
     if _e_fim_de_aula(low):
         from . import aula as _aula
 

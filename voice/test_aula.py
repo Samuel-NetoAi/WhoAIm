@@ -118,6 +118,21 @@ class TestFalaNatural(unittest.TestCase):
                       "já pode parar a gravação"):
             self.assertTrue(_e_fim_de_aula(frase.lower()), frase)
 
+    def test_pausar_nao_e_encerrar(self):
+        """A fala é parecida ("pausa" x "para") e o efeito é oposto."""
+        from tools.local_commands import (_e_fim_de_aula, _e_pausa_de_aula,
+                                          _e_retomada_de_aula)
+
+        for frase in ("pausa a aula", "pausei o vídeo", "pausar a gravação"):
+            self.assertTrue(_e_pausa_de_aula(frase.lower()), frase)
+            self.assertFalse(_e_fim_de_aula(frase.lower()),
+                             f"'{frase}' encerraria a aula em vez de pausar")
+
+        for frase in ("continuar a aula", "retoma a aula",
+                      "voltei, pode continuar gravando"):
+            self.assertTrue(_e_retomada_de_aula(frase.lower()), frase)
+            self.assertFalse(_e_fim_de_aula(frase.lower()), frase)
+
     def test_nao_encerra_por_engano(self):
         from tools.local_commands import _e_fim_de_aula
 
@@ -141,7 +156,8 @@ class TestFalaNatural(unittest.TestCase):
         self.assertIn("gravar_aula", nomes)
         ferramenta = next(x for x in main.TOOLS if x["name"] == "gravar_aula")
         acoes = ferramenta["parameters"]["properties"]["acao"]["enum"]
-        self.assertEqual(sorted(acoes), ["iniciar", "parar", "situacao"])
+        self.assertEqual(sorted(acoes),
+                         ["iniciar", "parar", "pausar", "retomar", "situacao"])
 
     def test_nao_reabre_quando_ele_manda_parar(self):
         """'parar a aula' contém 'aula': sem cuidado, abriria outra gravação."""
@@ -220,35 +236,69 @@ class TestGravacaoReal(unittest.TestCase):
     def test_nao_perde_aula_quando_o_omega_fala(self):
         """O defeito que custou 9 minutos de uma aula de 25.
 
-        A primeira versão DESCARTAVA o áudio enquanto o OMEGA falava, para não
-        sujar a transcrição. No uso real, cada pergunta do Samuel comeu um
-        pedaço da aula e ele não tinha como saber. Agora grava sempre e marca
-        o intervalo — a limpeza vai para a transcrição, onde é reversível.
+        A primeira versão DESCARTAVA o áudio enquanto o OMEGA falava. Agora
+        grava e marca o intervalo.
+
+        O teste NÃO compara com o relógio de parede, e a razão é o loopback:
+        ele só entrega dados enquanto algo TOCA — silêncio não vira bytes. Por
+        isso o que se mede aqui é o que de fato importa: o som que tocou
+        durante a fala do OMEGA continua no arquivo.
         """
         import json
 
         aula.iniciar("curso-de-teste", "perda")
         self.pasta = aula._estado["pasta"]
+        time.sleep(0.6)
+
+        aula.pausar()                       # o OMEGA "falando"
+        _tocar_direto("Este trecho tocou enquanto eu falava.")
+        time.sleep(0.4)
+        aula.retomar()
+        _tocar_direto("E este tocou depois.")
+        time.sleep(0.4)
+        aula.parar()
+
+        gravado = len(transcritor.ler_wav_16k(self.pasta / "audio.wav")) / 2 / 16000
+        print(f"\n   gravado {gravado:.1f}s")
+        self.assertGreater(gravado, 1.5,
+                           "descartou o áudio que tocou durante minha fala")
+
+        marcados = json.loads(
+            (self.pasta / "falas-do-omega.json").read_text(encoding="utf-8"))
+        self.assertTrue(marcados, "não marcou o intervalo em que eu falei")
+
+    def test_pausa_congela_o_relogio_da_aula(self):
+        """O timestamp precisa seguir batendo com o timer do VÍDEO.
+
+        Se o relógio corresse durante a pausa, uma pausa de cinco minutos
+        empurraria todo o resto cinco minutos para frente — e uma regra
+        citando "aos 12:30" apontaria para o lugar errado na aula. É a
+        procedência que se perde, que é o valor inteiro da extração.
+        """
+        aula.iniciar("curso-de-teste", "pausa")
+        self.pasta = aula._estado["pasta"]
         inicio = time.time()
         time.sleep(1.0)
-        aula.pausar()
-        time.sleep(2.0)          # o OMEGA "falando" por 2 s
-        aula.retomar()
+        aula.pausar_aula()
+        self.assertTrue(aula.pausada())
+        self.assertIn("PAUSADA", aula.situacao())
+        time.sleep(2.5)                    # o "café"
+        aula.retomar_aula()
+        self.assertFalse(aula.pausada())
         time.sleep(1.0)
         relogio = time.time() - inicio
         aula.parar()
 
         gravado = len(transcritor.ler_wav_16k(self.pasta / "audio.wav")) / 2 / 16000
-        print(f"\n   relógio {relogio:.1f}s · gravado {gravado:.1f}s")
-        self.assertGreater(gravado, relogio - 1.2,
-                           "ainda está descartando o áudio da aula")
+        print(f"\n   parede {relogio:.1f}s · gravado {gravado:.1f}s")
+        self.assertLess(gravado, relogio - 1.5,
+                        "gravou durante a pausa — o timestamp vai sair torto")
 
-        marcados = json.loads(
-            (self.pasta / "falas-do-omega.json").read_text(encoding="utf-8"))
-        self.assertTrue(marcados, "não marcou quando eu falei")
-        inicio_m, fim_m = marcados[0]
-        self.assertGreater(fim_m - inicio_m, 1.0,
-                           "o intervalo marcado não bate com os 2 s de fala")
+    def test_pausar_sem_aula_nao_estoura(self):
+        if aula.gravando():
+            aula.parar()
+        self.assertIn("Não estou gravando", aula.pausar_aula())
+        self.assertIn("Não estou gravando", aula.retomar_aula())
 
     def test_buffer_recente_tem_o_que_transcrever(self):
         aula.iniciar("curso-de-teste", "buffer")

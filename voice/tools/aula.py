@@ -19,6 +19,13 @@ COMO, e por que não do jeito óbvio:
   (tools/curso.py). O que fica ao vivo é só um buffer curto, para responder
   "o que ele acabou de dizer?".
 
+O LOOPBACK NÃO GRAVA SILÊNCIO. Quando nada toca, o WASAPI simplesmente não
+entrega dados — o arquivo não cresce. Isso é bom para nós (o timestamp segue
+o vídeo, não o relógio da sala) mas surpreende quem espera que "10 minutos
+gravando" signifiquem "10 minutos de áudio". Também foi o que travou a
+primeira versão, que lia em modo bloqueante: `read()` de 0,5 s não retornou
+em 200 s com o PC em silêncio. Por isso a captura é em modo CALLBACK.
+
 A ARMADILHA QUE ESTE MÓDULO TRATA: a Mixagem estéreo captura TUDO que sai
 pelos alto-falantes — inclusive a voz do próprio OMEGA. Sem pausar a captura
 enquanto ele fala, a transcrição da aula viria salpicada das respostas dele, e
@@ -77,7 +84,19 @@ _silenciado = 0
 
 
 def _segundos_de_aula() -> float:
-    return time.monotonic() - _estado.get("inicio", time.monotonic())
+    """Tempo de AULA, não de relógio — o tempo pausado não conta.
+
+    É isto que mantém o timestamp da transcrição alinhado com o timer do
+    próprio vídeo. Se o relógio corresse durante a pausa, uma pausa de cinco
+    minutos jogaria todo o resto cinco minutos para frente, e uma regra
+    citando "aos 12:30" apontaria para o lugar errado na aula — que é
+    exatamente o que a procedência existe para evitar.
+    """
+    agora = time.monotonic()
+    parado = _estado.get("tempo_pausado", 0.0)
+    if _estado.get("pausada_desde"):
+        parado += agora - _estado["pausada_desde"]
+    return agora - _estado.get("inicio", agora) - parado
 
 
 def _sem_acento(texto: str) -> str:
@@ -116,6 +135,41 @@ def definir_curso(nome: str) -> str:
 
 def gravando() -> bool:
     return _estado["gravando"]
+
+
+def pausada() -> bool:
+    return bool(_estado.get("pausada_desde"))
+
+
+def pausar_aula() -> str:
+    """Você pausou o vídeo — eu paro junto.
+
+    Diferente de `pausar()`, que é para quando o OMEGA fala: ali a gravação
+    continua e o trecho só é marcado. Aqui o vídeo está PARADO, não há nada
+    para gravar, e o relógio precisa parar junto.
+    """
+    if not _estado["gravando"]:
+        return "Não estou gravando aula nenhuma, senhor."
+    if pausada():
+        return f"A aula já está pausada em {_mmss(_segundos_de_aula())}."
+    _estado["pausada_desde"] = time.monotonic()
+    return (f"PAUSEI em {_mmss(_segundos_de_aula())}. Pode ir tomar um café — "
+            "diga 'continuar a aula' quando voltar.")
+
+
+def retomar_aula() -> str:
+    if not _estado["gravando"]:
+        return "Não estou gravando aula nenhuma, senhor."
+    if not pausada():
+        return "A aula não está pausada — sigo gravando."
+    _estado["tempo_pausado"] = (_estado.get("tempo_pausado", 0.0)
+                                + time.monotonic() - _estado["pausada_desde"])
+    _estado["pausada_desde"] = None
+    return f"VOLTEI a gravar, de {_mmss(_segundos_de_aula())}. Pode dar play."
+
+
+def _mmss(segundos: float) -> str:
+    return f"{int(segundos) // 60}:{int(segundos) % 60:02d}"
 
 
 def pausar() -> None:
@@ -221,45 +275,6 @@ def _so_existe_no_wdm() -> bool:
     return bool(vistas) and all("WDM-KS" in v for v in vistas)
 
 
-def _ler_do_loopback(audio, info, parar: threading.Event,
-                     pronto: threading.Event) -> None:
-    """Thread que lê o loopback em blocos e alimenta o mesmo caminho de sempre.
-
-    Leitura bloqueante em vez de callback: o PyAudio em modo callback tem as
-    mesmas armadilhas do sounddevice, e aqui não há requisito de latência —
-    é gravação, não conversa.
-    """
-    import pyaudiowpatch as pa
-
-    taxa, canais = int(info["defaultSampleRate"]), info["maxInputChannels"]
-    _estado.update({"taxa": taxa, "canais": canais})
-    try:
-        fluxo = audio.open(format=pa.paInt16, channels=canais, rate=taxa,
-                           input=True, input_device_index=info["index"],
-                           frames_per_buffer=int(taxa * 0.5))
-    except Exception:  # noqa: BLE001
-        pronto.set()
-        return
-    pronto.set()
-    try:
-        while not parar.is_set():
-            try:
-                bruto = fluxo.read(int(taxa * 0.5), exception_on_overflow=False)
-            except Exception:  # noqa: BLE001 — dispositivo trocado no meio
-                break
-            _callback(bruto, 0, None, None)
-    finally:
-        try:
-            fluxo.stop_stream()
-            fluxo.close()
-        except Exception:  # noqa: BLE001
-            pass
-        try:
-            audio.terminate()
-        except Exception:  # noqa: BLE001
-            pass
-
-
 def _callback(indata, frames, tempo, status):
     # NADA MAIS É DESCARTADO. A primeira versão jogava fora o áudio enquanto o
     # OMEGA falava, para não sujar a transcrição — e o preço apareceu no uso
@@ -269,6 +284,10 @@ def _callback(indata, frames, tempo, status):
     # Agora grava sempre e ANOTA o intervalo em que o OMEGA falou. A limpeza
     # acontece na transcrição, por timestamp, onde ela é reversível — se a
     # marcação errar, o áudio continua lá para conferir.
+    if _estado.get("pausada_desde"):
+        # Vídeo parado: não há aula para gravar.
+        return
+
     if _silenciado and not _estado.get("mudo_desde"):
         _estado["mudo_desde"] = _segundos_de_aula()
     elif not _silenciado and _estado.get("mudo_desde"):
@@ -299,6 +318,57 @@ def _callback(indata, frames, tempo, status):
         total -= len(_recentes.popleft()) / 2 / TAXA
 
 
+def _abrir_loopback(audio, info, pronto: threading.Event):
+    """Abre o loopback em modo CALLBACK, e devolve o fluxo.
+
+    Por que não leitura bloqueante, que era o desenho anterior: o WASAPI
+    loopback **só entrega dados enquanto algo está tocando**. Com o PC em
+    silêncio o `read()` fica preso para sempre — a thread travava, e quando o
+    Samuel mandasse parar o áudio estaria vazio. Medido: `read()` de 0,5 s não
+    retornou em 200 segundos com nada tocando.
+
+    Em modo callback, silêncio simplesmente não gera chamadas. Nada trava, e
+    quando o vídeo começa a tocar os blocos passam a chegar.
+
+    CONSEQUÊNCIA QUE IMPORTA: o WAV cresce só com o que TOCOU. Isso é o certo
+    para o nosso caso — o timestamp da transcrição acompanha o vídeo, não o
+    relógio da sala. Se o Samuel pausar sem avisar, o silêncio nem entra.
+    """
+    import pyaudiowpatch as pa
+
+    taxa, canais = int(info["defaultSampleRate"]), info["maxInputChannels"]
+    _estado.update({"taxa": taxa, "canais": canais})
+
+    def ao_chegar(dados, quadros, tempo, estado):
+        try:
+            _callback(dados, quadros, tempo, estado)
+        except Exception:  # noqa: BLE001 — nunca derrubar o fluxo de áudio
+            pass
+        return (None, pa.paContinue)
+
+    try:
+        fluxo = audio.open(format=pa.paInt16, channels=canais, rate=taxa,
+                           input=True, input_device_index=info["index"],
+                           frames_per_buffer=int(taxa * 0.5),
+                           stream_callback=ao_chegar)
+        fluxo.start_stream()
+    except Exception:  # noqa: BLE001
+        pronto.set()
+        return None
+    pronto.set()
+    return fluxo
+
+
+def _fechar_loopback(fluxo, audio) -> None:
+    for fechar in (lambda: fluxo and fluxo.stop_stream(),
+                   lambda: fluxo and fluxo.close(),
+                   lambda: audio and audio.terminate()):
+        try:
+            fechar()
+        except Exception:  # noqa: BLE001
+            pass
+
+
 # Abaixo disto não há som nenhum saindo pelos alto-falantes.
 PICO_MINIMO = 150
 
@@ -318,12 +388,14 @@ def _laco_de_prints(pasta: Path) -> None:
     from PIL import ImageGrab
 
     while not _parar.wait(INTERVALO_PRINT):
+        if _estado.get("pausada_desde"):
+            continue
         if _silenciado:
             # Só o PRINT é pulado: a tela nessa hora costuma ser a janela do
             # OMEGA, não a aula. O áudio continua sendo gravado.
             continue
         try:
-            segundos = int(time.monotonic() - _estado["inicio"])
+            segundos = int(_segundos_de_aula())
             imagem = ImageGrab.grab()
             largura = LARGURA_PRINT
             altura = int(imagem.height * largura / imagem.width)
@@ -366,6 +438,7 @@ def iniciar(curso: str, titulo: str, avisar=None) -> str:
     _estado.update({"gravando": True, "pasta": pasta, "titulo": titulo,
                     "inicio": time.monotonic(), "prints": 0, "pico": 0,
                     "curso": curso, "mudos": [], "mudo_desde": None,
+                    "pausada_desde": None, "tempo_pausado": 0.0,
                     "por_onde": ""})
     _recentes.clear()
     _parar.clear()
@@ -379,10 +452,14 @@ def iniciar(curso: str, titulo: str, avisar=None) -> str:
         # leva um instante, e responder antes disso faz o Samuel dar play e
         # perder os primeiros segundos da aula.
         pronto = threading.Event()
-        threading.Thread(target=_ler_do_loopback,
-                         args=(audio, info, sessao, pronto),
-                         name="loopback-aula", daemon=True).start()
+        fluxo = _abrir_loopback(audio, info, pronto)
         pronto.wait(timeout=3)
+        if fluxo is None:
+            _wav.close()
+            _wav = None
+            _estado["gravando"] = False
+            return "Não consegui abrir a captura do som do PC."
+        _estado["fluxo_loopback"] = (fluxo, audio)
     else:
         indice, taxa, canais = reserva
         _estado.update({"taxa": taxa, "canais": canais,
@@ -425,6 +502,12 @@ def _pulso(avisar) -> None:
         if not _estado["gravando"]:
             return
         s = int(_segundos_de_aula())
+        if pausada():
+            # Avisar na pausa importa MAIS que avisar gravando: é o estado em
+            # que dá para esquecer e perder a aula inteira achando que grava.
+            avisar(f"SYS: ⏸ aula PAUSADA em {s // 60}:{s % 60:02d} — "
+                   "diga 'continuar a aula' para voltar.")
+            continue
         avisar(f"SYS: ● gravando {_estado['titulo']} — {s // 60}:{s % 60:02d}, "
                f"{_estado['prints']} telas.")
 
@@ -464,9 +547,11 @@ def parar() -> str:
     sessao = _estado.get("parar_sessao")
     if sessao is not None:
         sessao.set()
-    # Dar à thread de leitura tempo de sair do `read()` antes de fechar o wav:
-    # sem isso ela pode escrever num arquivo já fechado.
-    time.sleep(0.6)
+    # Fechar o fluxo ANTES do wav: o callback do PyAudio roda em thread
+    # própria e escreveria num arquivo já fechado.
+    fluxo_audio = _estado.pop("fluxo_loopback", None)
+    if fluxo_audio:
+        _fechar_loopback(*fluxo_audio)
     try:
         if _stream is not None:
             _stream.stop()
@@ -525,6 +610,10 @@ def situacao() -> str:
     if not _estado["gravando"]:
         return "NÃO estou gravando aula nenhuma agora."
     passados = int(_segundos_de_aula())
+    if pausada():
+        return (f"A aula '{_estado['titulo']}' está PAUSADA em "
+                f"{passados // 60}:{passados % 60:02d}. Diga 'continuar a "
+                "aula' quando der play.")
     return (f"SIM, ainda gravando '{_estado['titulo']}' — "
             f"{passados // 60}:{passados % 60:02d} de aula, "
             f"{_estado['prints']} telas, por {_estado.get('por_onde', 'áudio do PC')}.")
