@@ -268,7 +268,12 @@ def _quer_modo(baixo: str, alvos: tuple[str, ...]) -> bool:
 def _e_fim_de_aula(baixo: str) -> bool:
     """"pode parar de gravar a aula 1" tem que encerrar tanto quanto "parar aula"."""
     palavras = [_norm(p) for p in baixo.split()]
-    if not any(p in ("aula", "aulas", "gravacao", "gravando") for p in palavras):
+    # "gravar"/"grava" entram aqui porque "pode parar de gravar" — sem dizer
+    # "aula" — é como se fala de verdade, e não casava com nada. Não há
+    # conflito com o lado de ABRIR: lá os verbos de encerramento são
+    # excluídos, então "gravar aula 2" abre e "parar de gravar" fecha.
+    if not any(p in ("aula", "aulas", "gravacao", "gravando", "gravar", "grava")
+               for p in palavras):
         return False
     return any(p in _FIM_DE_AULA for p in palavras)
 

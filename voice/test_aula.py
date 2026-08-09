@@ -110,7 +110,12 @@ class TestFalaNatural(unittest.TestCase):
                       "a aula 1 acabou de acabar",
                       "encerra a gravação",
                       "parar aula",
-                      "terminar a aula agora"):
+                      "terminar a aula agora",
+                      # Sem a palavra "aula" — é como se fala de verdade, e
+                      # não casava com nada.
+                      "pode parar de gravar",
+                      "para de gravar",
+                      "já pode parar a gravação"):
             self.assertTrue(_e_fim_de_aula(frase.lower()), frase)
 
     def test_nao_encerra_por_engano(self):
