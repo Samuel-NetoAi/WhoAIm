@@ -273,54 +273,64 @@ def _tocar(quadro) -> None:
             continue
 
 
-_TITULO = """() => {
-  for (const s of ['h1', '[class*=lesson] h2', 'h2',
-                   '[class*=titulo]', '[class*=title]']) {
-    const e = document.querySelector(s);
-    const t = e && (e.innerText || '').trim();
-    if (t && t.length > 2 && t.length < 120) return t;
-  }
-  return (document.title || '').split('|')[0].trim();
+# O nome da aula vem da LISTA, não do <h1> da página. Medido na página real:
+# o <h1> é o nome do MÓDULO ("START - O COMEÇO DA SUA JORNADA"), igual para
+# todas as aulas dele — e como o nome vira nome de pasta, as dezessete aulas
+# de um módulo colidiriam e o OMEGA pularia dezesseis achando que já tinha
+# gravado. A lista já traz o título certo de cada uma.
+
+
+# Links que casam com o formato de aula mas NÃO são aula: as abas do topo
+# ("Aulas", "Conteúdo", "Comentários") apontam para a própria lição, com o
+# mesmo formato de endereço. Sem isto o OMEGA abriria a mesma página três
+# vezes achando que eram aulas diferentes. Verificado na página real.
+_NAO_E_AULA = ("aulas", "conteudo", "conteúdo", "comentarios", "comentários",
+               "current page", "materiais", "suporte", "inicio", "início")
+
+# A Kiwify libera aula por data ("Liberação em 15/08/2026"). O item continua
+# sendo um link, e a página abre — só que sem vídeo nenhum. Reconhecer isso
+# aqui evita 45 segundos de espera por aula que ainda nem existe, e permite
+# DIZER ao Samuel o que ficou de fora em vez de deixar buraco silencioso.
+_BLOQUEADA = re.compile(r"libera[cç][aã]o em", re.I)
+
+_COLHER_LINKS = """() => {
+  // A lista de aulas é uma <ol> de <li>; a aula travada tem opacity-50 no
+  // <li>. Se o tema mudar e isto não achar nada, quem chama cai no plano B.
+  const de = (sel) => [...document.querySelectorAll(sel)].map(a => ({
+      href: a.href,
+      txt: (a.innerText || '').replace(/\\s+/g, ' ').trim(),
+      fraco: !!a.closest('li') &&
+             /opacity-\\d/.test(a.closest('li').className || '')}));
+  const lista = de('ol li a[href]');
+  return lista.length >= 2 ? lista : de('a[href]');
 }"""
 
 
-def _lista_de_aulas(pagina) -> list[str]:
-    """Os links das aulas, na ordem em que aparecem na página."""
+def _lista_de_aulas(pagina) -> list[dict]:
+    """As aulas, na ordem da página, já separando as que ainda não abriram."""
     try:
-        brutos = pagina.evaluate(
-            "() => [...document.querySelectorAll('a[href]')].map(a => a.href)")
+        brutos = pagina.evaluate(_COLHER_LINKS)
     except Exception:  # noqa: BLE001
         return []
     saida, vistos = [], set()
-    for h in brutos:
-        if not LINK_DE_AULA.search(h or ""):
+    for item in brutos:
+        href = item.get("href") or ""
+        if not LINK_DE_AULA.search(href):
             continue
-        chave = h.split("?")[0]
+        chave = href.split("?")[0]
         if chave in vistos:
             continue
-        vistos.add(chave)
-        saida.append(h)
-    return saida[:MAX_AULAS]
-
-
-def _proxima_pelo_botao(pagina) -> bool:
-    """Reserva para quando a lista não é feita de links (SPA sem <a>).
-
-    Preferimos os links: o botão de avançar às vezes é "concluir e avançar",
-    e marcar a aula como assistida é decisão do Samuel, não minha.
-    """
-    for seletor in ("a:has-text('Próxima')", "button:has-text('Próxima')",
-                    "a:has-text('Proxima')", "button:has-text('Avançar')",
-                    "[class*=next]"):
-        try:
-            antes = pagina.url
-            pagina.click(seletor, timeout=4000)
-            pagina.wait_for_timeout(3000)
-            if pagina.url != antes:
-                return True
-        except Exception:  # noqa: BLE001
+        texto = (item.get("txt") or "").strip()
+        if not texto or texto.lower().lstrip("current page: ") in _NAO_E_AULA \
+                or any(texto.lower().startswith(n) for n in _NAO_E_AULA):
             continue
-    return False
+        vistos.add(chave)
+        saida.append({
+            "href": href,
+            "titulo": _BLOQUEADA.split(texto)[0].strip(" -–—"),
+            "bloqueada": bool(item.get("fraco")) or bool(_BLOQUEADA.search(texto)),
+        })
+    return saida[:MAX_AULAS]
 
 
 def _ja_gravada(curso: str, titulo: str) -> bool:
@@ -335,15 +345,12 @@ def _ja_gravada(curso: str, titulo: str) -> bool:
     return False
 
 
-def _assistir_uma(pagina, curso: str, indice: int, total: int) -> str:
+def _assistir_uma(pagina, curso: str, indice: int, total: int,
+                  titulo: str) -> str:
     """Grava uma aula do começo ao fim. Devolve o motivo de ter terminado."""
     from . import aula as _aula
 
-    titulo = "aula"
-    try:
-        titulo = pagina.evaluate(_TITULO) or f"aula {indice}"
-    except Exception:  # noqa: BLE001
-        titulo = f"aula {indice}"
+    titulo = (titulo or "").strip() or f"aula {indice}"
     _publicar(indice=indice, total=total, aula=titulo, segundos=0, duracao=0)
 
     if _ja_gravada(curso, titulo):
@@ -470,48 +477,50 @@ def trabalhar(url: str) -> None:
                    "e depois peça de novo.")
             return
 
-        aulas = _lista_de_aulas(pagina)
-        if url.split("?")[0] not in [a.split("?")[0] for a in aulas]:
-            aulas.insert(0, url)
-        total = len(aulas) or 1
-        _anotar(f"achei {len(aulas)} aula(s)")
-        _publicar(total=total)
-        _falar(f"Achei {total} aulas. Começando." if len(aulas) > 1
-               else "Vou gravar esta aula e seguir pelas próximas.")
+        todas = _lista_de_aulas(pagina)
+        if not todas:
+            _anotar("não achei a lista de aulas nesta página")
+            _publicar(rodando=False, fim="não achei a lista de aulas")
+            _falar("Abri o curso mas não achei a lista de aulas. "
+                   "Confira se a página é a de uma aula.")
+            return
 
-        indice = 0
-        visitadas: set[str] = set()
-        while indice < MAX_AULAS:
+        travadas = [a["titulo"] for a in todas if a["bloqueada"]]
+        aulas = [a for a in todas if not a["bloqueada"]]
+        total = len(aulas)
+        _anotar(f"{len(todas)} itens: {total} abertas, {len(travadas)} travadas")
+        for t in travadas:
+            _anotar(f"  travada: {t[:80]}")
+        _publicar(total=total, travadas=travadas)
+        _falar(f"Achei {total} aulas para assistir"
+               + (f". Outras {len(travadas)} ainda não foram liberadas — "
+                  "eu aviso quando abrirem." if travadas else ".")
+               + " Começando pela primeira.")
+
+        # Da PRIMEIRA em diante, e não de onde ele parou: o curso tem ordem, e
+        # a extração de regras fica melhor com o contexto vindo em sequência.
+        for indice, item in enumerate(aulas, start=1):
             if _mandaram_parar():
                 break
-            atual = pagina.url.split("?")[0]
-            if atual in visitadas:
-                _anotar("voltei numa aula que já vi — encerrando")
-                break
-            visitadas.add(atual)
-            indice += 1
+            if pagina.url.split("?")[0] != item["href"].split("?")[0]:
+                with navegador._trava:
+                    pagina = navegador._ir_para(item["href"])
+                pagina.wait_for_timeout(4000)
 
-            motivo = _assistir_uma(pagina, curso, indice, max(total, indice))
+            motivo = _assistir_uma(pagina, curso, indice, total,
+                                   item["titulo"])
             if motivo == "acabou":
                 gravadas += 1
             _publicar(gravadas=gravadas)
             if motivo == "você mandou parar":
                 break
 
-            proxima = next((a for a in aulas
-                            if a.split("?")[0] not in visitadas), "")
-            if proxima:
-                with navegador._trava:
-                    pagina = navegador._ir_para(proxima)
-                pagina.wait_for_timeout(4000)
-            elif not _proxima_pelo_botao(pagina):
-                _anotar("não há próxima aula — terminei")
-                break
-
         _publicar(rodando=False, fim=f"{gravadas} aula(s) gravada(s)")
         _anotar(f"=== fim: {gravadas} gravada(s)")
-        _falar(f"Terminei o curso. Gravei {gravadas} aulas. "
-               "Diga 'processar curso' quando quiser que eu extraia as regras."
+        _falar(f"Terminei. Gravei {gravadas} aulas"
+               + (f", e {len(travadas)} continuam travadas por data."
+                  if travadas else ".")
+               + " Diga 'processar curso' quando quiser que eu extraia as regras."
                if gravadas else
                "Encerrei a maratona sem conseguir gravar nada. "
                "Olhe o diário da maratona.")

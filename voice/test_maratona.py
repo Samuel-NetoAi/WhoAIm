@@ -87,18 +87,51 @@ class TestAcharAsAulas(unittest.TestCase):
                       "https://members.kiwify.com/675fa57e-4021/perfil"):
             self.assertFalse(maratona.LINK_DE_AULA.search(outro), outro)
 
-    def test_mantem_a_ordem_e_nao_repete(self):
-        """A ordem da página É a ordem do curso — não dá para embaralhar."""
-        a = URL_REAL.split("?")[0]
-        b = a[:-3] + "bbb"
-        c = a[:-3] + "ccc"
-
+    def _pagina(self, itens):
         class Pagina:
             def evaluate(self, _):
-                return [a, "https://members.kiwify.com/conta", b,
-                        a + "?club=x", c]
+                return itens
 
-        self.assertEqual(maratona._lista_de_aulas(Pagina()), [a, b, c])
+        return Pagina()
+
+    def _link(self, sufixo, txt, fraco=False):
+        return {"href": URL_REAL.split("?")[0][:-3] + sufixo,
+                "txt": txt, "fraco": fraco}
+
+    def test_mantem_a_ordem_e_nao_repete(self):
+        """A ordem da página É a ordem do curso — não dá para embaralhar."""
+        pag = self._pagina([self._link("aaa", "Aula 1 - Começo"),
+                            self._link("bbb", "Aula 2 - Meio"),
+                            {"href": "https://members.kiwify.com/conta",
+                             "txt": "Minha conta", "fraco": False},
+                            self._link("aaa", "Aula 1 - Começo"),
+                            self._link("ccc", "Aula 3 - Fim")])
+        self.assertEqual([a["titulo"] for a in maratona._lista_de_aulas(pag)],
+                         ["Aula 1 - Começo", "Aula 2 - Meio", "Aula 3 - Fim"])
+
+    def test_descarta_as_abas_que_parecem_aula(self):
+        """Medido na página real: "Aulas", "Conteúdo" e "Comentários" têm o
+        MESMO formato de endereço da aula, e apontam para a própria lição.
+        Sem este filtro o OMEGA abriria a mesma página três vezes."""
+        pag = self._pagina([self._link("111", ""),
+                            self._link("222", "Aulas"),
+                            self._link("333", "Current page: Conteúdo"),
+                            self._link("444", "Comentários0"),
+                            self._link("555", "Aula 1 - A Escolha")])
+        achadas = maratona._lista_de_aulas(pag)
+        self.assertEqual([a["titulo"] for a in achadas], ["Aula 1 - A Escolha"])
+
+    def test_marca_a_aula_que_ainda_nao_abriu(self):
+        """A Kiwify libera por data. A página abre, mas não tem vídeo."""
+        pag = self._pagina([
+            self._link("aaa", "Aula 1: A Magica do SUBNICHO"),
+            self._link("bbb", "Aula 2: O Maior Segredo Liberação em 15/08/2026"),
+            self._link("ccc", "Aula 3: HACK para Subnichar", fraco=True)])
+        achadas = maratona._lista_de_aulas(pag)
+        self.assertEqual([a["bloqueada"] for a in achadas],
+                         [False, True, True])
+        # A data não pode virar parte do nome da pasta.
+        self.assertEqual(achadas[1]["titulo"], "Aula 2: O Maior Segredo")
 
     def test_pagina_quebrada_nao_derruba(self):
         class Pagina:

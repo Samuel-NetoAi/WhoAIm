@@ -105,8 +105,22 @@ def _sem_acento(texto: str) -> str:
                    if unicodedata.category(c) != "Mn")
 
 
+# Título de aula de curso é longo de verdade — "ALERTA! Como Funciona a Minha
+# METODOLOGIA + Resgate Seus Bonus + Acessar o Suporte" tem 80 caracteres. O
+# caminho completo ainda leva a pasta do curso, a data e `telas/00030.jpg`, e o
+# Windows corta em 260. Cortar aqui é o que impede um print de aula deixar de
+# ser salvo lá no fim, em silêncio.
+LIMITE_SLUG = 60
+
+
 def _slug(texto: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "-", _sem_acento(texto).lower()).strip("-") or "aula"
+    limpo = re.sub(r"[^a-z0-9]+", "-",
+                   _sem_acento(texto).lower()).strip("-") or "aula"
+    if len(limpo) <= LIMITE_SLUG:
+        return limpo
+    # Corta na palavra, não no meio dela: o nome ainda precisa ser legível
+    # numa lista de quarenta pastas.
+    return limpo[:LIMITE_SLUG].rsplit("-", 1)[0] or limpo[:LIMITE_SLUG]
 
 
 # Qual curso está em andamento. Fica em disco para sobreviver ao fechamento do
