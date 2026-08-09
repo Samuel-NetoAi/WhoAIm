@@ -183,6 +183,13 @@ _VERBOS_DE_LEITURA = {"ler", "leia", "le", "lê", "leiame", "narrar", "narre",
 _VERBOS_DE_NARRACAO = {"narrar", "narre", "narra", "recitar", "recite",
                        "interpretar", "interprete"}
 
+# Verbos de leitura que também são palavras comuníssimas. Eles valem para
+# decidir "ler ou exibir" (`_quer_ouvir`), mas NÃO podem disparar um comando
+# sozinhos: "me conta uma piada" ia procurar uma criatura chamada "uma piada".
+# É o mesmo erro do "amiga" na palavra de ativação — chave de comando que
+# também é fala do dia a dia vira armadilha.
+_LEITURA_AMBIGUA = {"conta", "conte", "fala", "fale", "le", "lê"}
+
 
 # Abaixo disto a semelhança vira coincidência e o comando errado dispara.
 _LIMIAR_VERBO = 0.82
@@ -231,6 +238,26 @@ _FIM_DE_AULA = ("parar", "para", "pare", "terminar", "termina", "acabou",
 # "modo conversa", "muda para o modo conversa", "entra no modo conversa"...
 # A palavra "modo" (ou "motor") é obrigatória: sem ela, "vamos conversar"
 # viraria troca de motor em vez de conversa.
+def _disse(baixo: str, *chaves: str) -> bool:
+    """A frase contém alguma destas palavras-chave, em qualquer posição?
+
+    Substitui o `low in (...)` que estava espalhado por vinte comandos. Ele
+    exigia a frase EXATA, e por isso "me mostra os projetos" caía no modelo
+    em vez de ser atendido aqui — medido: 18 de 20 formas naturais de falar
+    escapavam. Com o Gemini sem cota, escapar significa não funcionar.
+
+    Chave de uma palavra casa por palavra inteira (para "para" não casar
+    dentro de "separar"); chave com espaço casa como trecho.
+    """
+    normal = _norm(baixo)
+    palavras = set(normal.split())
+    for chave in chaves:
+        alvo = _norm(chave)
+        if (" " in alvo and alvo in normal) or alvo in palavras:
+            return True
+    return False
+
+
 def _quer_modo(baixo: str, alvos: tuple[str, ...]) -> bool:
     palavras = [_norm(p) for p in baixo.split()]
     if not any(p in ("modo", "motor") for p in palavras):
@@ -293,7 +320,7 @@ _VERBOS_DE_IMAGEM = {"imagem", "imagina", "desenha", "desenhar",
 # Toda palavra-chave que inicia um comando com alvo. A ordem não importa:
 # vence a que aparecer primeiro na frase.
 _VERBOS_COM_ALVO = (
-    _VERBOS_DE_LEITURA
+    (_VERBOS_DE_LEITURA - _LEITURA_AMBIGUA)
     | _VERBOS_DE_IMAGEM
     | set(NOTE_ALIASES)
     | {"video", "vídeo", "assistir", "analisar", "analise", "analisa",
@@ -507,15 +534,15 @@ def handle(text: str, ui) -> str | None:
     if not low:
         return None
 
-    if low in ("ajuda", "help", "comandos", "?"):
+    if _disse(low, "ajuda", "help", "comandos"):
         ui.show_document("ajuda", AJUDA)
         return "Comandos exibidos na tela."
 
-    if low in ("voltar", "inicio", "início", "tela", "hud", "rosto"):
+    if _disse(low, "voltar", "volta", "inicio", "hud", "rosto"):
         ui.show_hud()
         return "De volta ao HUD."
 
-    if low in ("projetos", "projetos?", "listar projetos", "lista de projetos"):
+    if _disse(low, "projetos"):
         err = _ensure_studio()
         if err:
             return err
@@ -536,7 +563,7 @@ def handle(text: str, ui) -> str | None:
         ui.show_document("projetos", doc)
         return f"{len(projetos)} projeto(s) na tela."
 
-    if low in ("progresso", "status", "situacao", "situação"):
+    if _disse(low, "progresso", "status"):
         return studio_control({"action": "status"})
 
     # Confirmação de exclusão: vem antes de tudo para que um "confirmar" solto
@@ -560,7 +587,7 @@ def handle(text: str, ui) -> str | None:
 
         return _motor.pedir("free")
 
-    if low in ("qual motor", "que motor", "modo atual", "qual modo"):
+    if _disse(low, "qual motor", "que motor", "modo atual", "qual modo"):
         from . import motor as _motor
 
         atual = _motor.atual()
@@ -570,9 +597,7 @@ def handle(text: str, ui) -> str | None:
                    "Diga 'modo conversa' para a voz em tempo real."))
 
     # ----- o que esta em alta -----
-    if low in ("tendencias", "tendências", "em alta", "o que esta em alta",
-               "o que está em alta", "google trends", "trends",
-               "sobre o que fazer o proximo video"):
+    if _disse(low, "tendencias", "em alta", "trends", "google trends"):
         from . import tendencias as _tend
 
         ui.write_log("SYS: buscando tendências...")
@@ -582,25 +607,22 @@ def handle(text: str, ui) -> str | None:
                 "analiso — sozinho eu só trouxe os números.")
 
     # ----- processar o curso e aprovar as regras -----
-    if low in ("processar curso", "processa curso", "processar as aulas",
-               "transcrever curso", "processar aulas"):
+    if _disse(low, "processar", "processa", "transcrever") and _disse(low, "curso", "aulas", "aula"):
         from . import curso as _curso
 
         return _curso.processar(ui)
 
-    if low in ("cancelar curso", "parar processamento", "cancelar processamento"):
+    if _disse(low, "cancelar", "cancela", "parar") and _disse(low, "processamento") or _disse(low, "cancelar curso"):
         from . import curso as _curso
 
         return _curso.cancelar()
 
-    if low in ("andamento do curso", "como vai o curso", "situacao do curso",
-               "situação do curso", "status do curso"):
+    if _disse(low, "curso") and _disse(low, "andamento", "situacao", "status", "como vai"):
         from . import curso as _curso
 
         return _curso.andamento()
 
-    if low in ("revisar regras", "revisa as regras", "ver regras",
-               "regras do curso", "revisar curso"):
+    if _disse(low, "regras"):
         from . import curso as _curso
 
         return _curso.revisar(ui)
@@ -643,14 +665,12 @@ def handle(text: str, ui) -> str | None:
 
         return _aula.parar()
 
-    if low in ("guarda essa tela", "guarde essa tela", "salva essa tela",
-               "print", "printa", "guarda a tela", "anota essa tela"):
+    if _disse(low, "print", "printa") or (_disse(low, "tela") and _disse(low, "guarda", "guarde", "salva", "anota")):
         from . import aula as _aula
 
         return _aula.print_agora()
 
-    if low in ("como esta a aula", "como está a aula", "situacao da aula",
-               "situação da aula"):
+    if _disse(low, "aula") and _disse(low, "como esta", "situacao", "ainda", "status"):
         from . import aula as _aula
 
         return _aula.situacao()
@@ -666,14 +686,13 @@ def handle(text: str, ui) -> str | None:
 
     # "O que você está vendo?" — pedido do Samuel para acompanhar a postagem
     # sem ter que caçar a janela do Chrome no meio das outras.
-    if low in ("ver navegador", "mostra o navegador", "o que voce esta vendo",
-               "o que você está vendo", "tela do navegador", "navegador"):
+    if _disse(low, "navegador") or _disse(low, "o que voce esta vendo"):
         return _navegador.ver(ui)
 
     # Como ele está te entendendo, e o que ainda falta ensinar. É a saída do
     # diário de aprendizado — a resposta prática ao "como se treina isso".
-    if low in ("revisar", "revisa", "revisao", "revisão", "como me entende",
-               "aprendizado", "o que voce nao entende", "o que você não entende"):
+    if _disse(low, "revisar", "revisa", "revisao", "aprendizado",
+              "me entende", "me entendendo", "me entendeu"):
         from . import aprendizado as _aprendizado
 
         texto = _aprendizado.resumo()
@@ -699,8 +718,7 @@ def handle(text: str, ui) -> str | None:
     # Trocar de assunto explicitamente. O OMEGA agora carrega as últimas
     # trocas para entender "e o roteiro dela?"; quando o assunto muda de
     # verdade, esse mesmo contexto atrapalha.
-    if low in ("esquece", "esquecer", "esquece isso", "novo assunto",
-               "muda de assunto", "outro assunto", "recomeca", "recomeçar"):
+    if _disse(low, "esquece", "esquecer", "recomeca") or _disse(low, "assunto"):
         esquecer = getattr(ui, "esquecer", None)
         return esquecer() if esquecer else "Nada guardado por aqui."
 
@@ -712,10 +730,10 @@ def handle(text: str, ui) -> str | None:
     if low in ("cancelar", "cancela", "deixa", "esquece", "nao apaga", "não apaga"):
         return _apagar.cancelar()
 
-    if low in ("andamento", "trabalho", "como esta", "como está", "pipeline"):
+    if _disse(low, "andamento", "pipeline"):
         return pipeline_criatura({"action": "status"})
 
-    if low in ("diagnostico", "diagnóstico", "checar", "check"):
+    if _disse(low, "diagnostico", "checar"):
         titulo, doc, resumo = _diagnostico()
         ui.show_document(titulo, doc)
         return resumo
