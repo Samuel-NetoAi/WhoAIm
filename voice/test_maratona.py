@@ -223,6 +223,25 @@ class TestAcompanhar(unittest.TestCase):
                          "vídeo sem som")
         self.assertGreaterEqual(q.plays, 1, "nem tentou religar o som antes")
 
+    def test_fim_sem_aviso_conta_como_acabou(self):
+        """A falha da primeira noite real, e ela custou 28 aulas.
+
+        Em 6 das 10 aulas o player chegou ao fim, congelou o último quadro e
+        nunca disparou `ended`, parando alguns segundos ANTES da duração. Eu
+        chamava isso de "travou": 2 minutos de silêncio gravado por aula, sem
+        marca de completa, e cinco seguidas encerraram a maratona.
+        """
+        congelado = [{"t": 1268.0, "d": 1290.0, "fim": False, "parado": True}] * 300
+        q = Quadro(self._andando(30) + congelado)
+        self.assertEqual(maratona._acompanhar(q, 1290, 1, 3, "x"), "acabou")
+
+    def test_travar_no_meio_continua_sendo_travar(self):
+        """Perto do fim é fim; no meio do vídeo é defeito de verdade."""
+        parado = [{"t": 300.0, "d": 1290.0, "fim": False, "parado": True}] * 300
+        q = Quadro(self._andando(30) + parado)
+        self.assertEqual(maratona._acompanhar(q, 1290, 1, 3, "x"),
+                         "o vídeo travou")
+
     def test_video_travado_nao_prende_para_sempre(self):
         parado = [{"t": 12.0, "d": 100.0, "fim": False, "parado": False}] * 500
         q = Quadro(self._andando(5) + parado)

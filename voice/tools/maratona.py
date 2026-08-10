@@ -66,6 +66,7 @@ MAX_AULAS = 60             # trava de segurança contra laço em círculo
 ESPERA_PLAYER = 45.0       # o player é iframe e demora a montar
 PACIENCIA_TRAVADO = 120.0  # vídeo sem avançar: buffer, anúncio, ou acabou mal
 SOBRA_FINAL = 3.0          # o `ended` às vezes não vem; isto fecha a conta
+ESPERA_FIM_MUDO = 20.0     # congelado perto do fim: acabou, não travou
 LIMITE_MUDO = 60.0         # gravar uma hora de silêncio é pior que parar
 
 
@@ -675,6 +676,22 @@ def _acompanhar(quadro, duracao: float, indice: int, total: int,
         if info.get("fim") or (d and t >= d - SOBRA_FINAL):
             return "acabou"
 
+        # FIM SEM AVISO. Medido na primeira noite real: em 6 das 10 aulas o
+        # player chegou ao fim, congelou o último quadro e NUNCA disparou
+        # `ended` — e o `currentTime` parou alguns segundos antes da duração,
+        # fora dos 3 s de folga. Cada uma dessas custou 2 minutos de silêncio
+        # gravado, ficou sem a marca de completa (seria regravada) e contou
+        # como falha: cinco seguidas encerraram a maratona na aula 10 de 38.
+        #
+        # Perto do fim, portanto, parar de andar não é defeito — é o fim.
+        #
+        # O `parado` é o que dá confiança para afrouxar o limite: engasgo de
+        # rede no meio do vídeo deixa o player TOCANDO e sem dados
+        # (`paused` false), enquanto o fim o deixa pausado. Ninguém encosta
+        # nesse navegador, então pausa espontânea passados 90% é fim de aula.
+        perto_do_fim = bool(d) and (t >= d - 20
+                                    or (info.get("parado") and t >= d * 0.90))
+
         # Silêncio é a falha cara: dá para gravar uma aula inteira de nada.
         # 60 s bastam para distinguir uma abertura silenciosa de um vídeo mudo.
         decorrido = time.monotonic() - comecou
@@ -694,9 +711,14 @@ def _acompanhar(quadro, duracao: float, indice: int, total: int,
         if t > ultimo_t + 0.3:
             ultimo_t, parado_desde = t, time.monotonic()
             continue
-        if time.monotonic() - parado_desde > PACIENCIA_TRAVADO:
+        # Congelado no fim: 20 s bastam para separar isso de um engasgo de
+        # rede, e economizam 100 s de silêncio por aula.
+        travado_ha = time.monotonic() - parado_desde
+        if perto_do_fim and travado_ha > ESPERA_FIM_MUDO:
+            return "acabou"
+        if travado_ha > PACIENCIA_TRAVADO:
             return "o vídeo travou"
-        if info.get("parado"):
+        if info.get("parado") and not perto_do_fim:
             _tocar(quadro)
 
 
