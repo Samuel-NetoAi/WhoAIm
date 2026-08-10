@@ -9,14 +9,31 @@ o que se testa é a DECISÃO.
 
 from __future__ import annotations
 
+import atexit
 import json
+import shutil
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from tools import maratona  # noqa: E402
+
+# OS TESTES NÃO PODEM ENCOSTAR NUMA MARATONA DE VERDADE.
+#
+# Descoberto do pior jeito: rodei a suíte com o curso gravando e o dublê do
+# player escreveu "0:12 de 1:40" no estado real — a "situação" passou a mentir.
+# E um dos testes CRIA o arquivo de pedido de parada: se o processo o tivesse
+# lido naquele instante, a maratona teria encerrado sozinha, com o Samuel fora
+# de casa. Aqui tudo aponta para uma pasta descartável.
+_TMP = Path(tempfile.mkdtemp(prefix="maratona-teste-"))
+maratona.ESTADO = _TMP / "estado.json"
+maratona.PEDIDO_DE_PARAR = _TMP / "parar"
+maratona.DIARIO = _TMP / "diario.log"
+maratona.CONFIG = _TMP / "curso.json"
+atexit.register(lambda: shutil.rmtree(_TMP, ignore_errors=True))
 
 URL_REAL = ("https://members.kiwify.com/675fa57e-4021-4264-9214-f0cc746d28ec/"
             "fa1d5590-e52a-4fc5-a399-198ff910622e/"
@@ -412,6 +429,38 @@ class TestReentrarSemSenha(unittest.TestCase):
         maratona.time = self._time
         self._nav._estado["contexto"] = self._contexto
 
+    def test_escolhe_a_conta_ja_listada(self):
+        """A tela do repasse não pede senha: pede para escolher a conta.
+
+        Eu procurava `input[type=password]`, não achava e desistia com
+        "formulário vazio" — sobre uma tela que não tem campo nenhum. Quem
+        viu foi o Samuel, olhando: "é só um tab e um enter".
+        """
+        clicados = []
+
+        class Escolha:
+            url = "https://dashboard.kiwify.com/sso/?club=x"
+
+            def evaluate(self, script):
+                if "eMail" in script:
+                    clicados.append("conta")
+                    return "sam***"
+                return False
+
+        pag = Escolha()
+        maratona._escolher_conta(pag)
+        self.assertEqual(clicados, ["conta"])
+
+    def test_a_pista_no_diario_vem_mascarada(self):
+        """O diário fica na máquina dele, mas e-mail inteiro em log é desleixo."""
+        class Escolha:
+            url = "x"
+
+            def evaluate(self, _):
+                return "sam***"
+
+        self.assertNotIn("@", maratona._escolher_conta(Escolha()))
+
     def test_NAO_envia_formulario_vazio(self):
         """Sem o navegador ter preenchido, enviar seria adivinhar senha."""
         pag = self.Pag(campos_cheios=False)
@@ -506,8 +555,14 @@ class TestEstado(unittest.TestCase):
     def setUp(self):
         self.backup = (maratona.ESTADO.read_bytes()
                        if maratona.ESTADO.exists() else None)
+        # Pode haver uma maratona DE VERDADE rodando enquanto a suíte roda —
+        # aconteceu. Sem isolar, `iniciar()` responde "já estou assistindo" e
+        # o teste falha por um motivo que não tem nada a ver com ele.
+        self._rodando = maratona.rodando
+        maratona.rodando = lambda: False
 
     def tearDown(self):
+        maratona.rodando = self._rodando
         if self.backup is None:
             maratona.ESTADO.unlink(missing_ok=True)
         else:

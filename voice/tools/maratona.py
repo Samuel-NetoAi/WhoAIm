@@ -324,6 +324,59 @@ def _perfil_ocupado() -> bool:
     return navegador.PERFIL.name in (saida or "")
 
 
+# A tela do repasse não é formulário: é "Escolha uma conta", com o e-mail dele
+# já listado e a senha guardada por trás. Escolher a conta é UM CLIQUE — não
+# digito nada, não vejo senha nenhuma, e nem preciso saber o e-mail: procuro a
+# linha que TEM cara de e-mail e clico nela.
+#
+# Eu tinha errado o alvo: procurava `input[type=password]`, não achava (a tela
+# não tem campo nenhum) e desistia com "formulário vazio". Foi o Samuel quem
+# viu, olhando a tela: "é só um tab e um enter".
+#
+# "Usar outra conta" fica de fora de propósito: aquilo leva a um formulário de
+# verdade, e é lá que a regra da senha voltaria a valer.
+_ESCOLHER_CONTA = r"""() => {
+  const eMail = /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i;
+  const folhas = [...document.querySelectorAll('*')].filter(
+      e => e.children.length === 0 && eMail.test((e.textContent || '').trim()));
+  if (!folhas.length) return '';
+  const linha = folhas[0];
+  const clicavel = linha.closest('button, a, [role=button], li, [tabindex]')
+                   || linha.parentElement || linha;
+  clicavel.click();
+  return (linha.textContent || '').trim().slice(0, 3) + '***';
+}"""
+
+
+def _escolher_conta(pagina) -> str:
+    """Clica na conta já listada. Devolve uma pista mascarada, para o diário."""
+    try:
+        return pagina.evaluate(_ESCOLHER_CONTA) or ""
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _esperar_entrar(pagina, segundos: float = 90.0) -> bool:
+    """Depois de escolher a conta, a aula volta — às vezes só após recarregar.
+
+    A aba do repasse se fecha sozinha ao terminar, e a aba original nem sempre
+    percebe: por isso o recarregamento no meio do caminho.
+    """
+    metade = time.monotonic() + segundos / 2
+    fim = time.monotonic() + segundos
+    recarregou = False
+    while time.monotonic() < fim:
+        if _assentar(pagina, 5):
+            return True
+        if not recarregou and time.monotonic() > metade:
+            recarregou = True
+            try:
+                pagina.reload(wait_until="domcontentloaded", timeout=60000)
+            except Exception:  # noqa: BLE001
+                pass
+    return False
+
+
 def _tentar_reentrar(pagina) -> bool:
     """Tenta voltar a entrar no curso SEM nunca ver a senha.
 
@@ -347,6 +400,13 @@ def _tentar_reentrar(pagina) -> bool:
 
     contexto = navegador._estado.get("contexto")
     antes = set(contexto.pages) if contexto else set()
+
+    # Talvez a escolha de conta já esteja na tela — não custa tentar antes.
+    quem = _escolher_conta(pagina)
+    if quem:
+        _anotar(f"escolhi a conta {quem} (um clique, sem senha)")
+        if _esperar_entrar(pagina):
+            return True
 
     for seletor in ("button:has-text('Fazer login com Kiwify')",
                     "a:has-text('Fazer login com Kiwify')",
@@ -374,7 +434,17 @@ def _tentar_reentrar(pagina) -> bool:
             formulario = novas[-1]
             break
 
-    # Sobrou um formulário. Só sigo se o NAVEGADOR já o tiver preenchido.
+    # A tela do repasse: escolher a conta resolve, e é só um clique.
+    for _ in range(3):
+        quem = _escolher_conta(formulario)
+        if not quem:
+            break
+        _anotar(f"escolhi a conta {quem} (um clique, sem senha)")
+        if _esperar_entrar(pagina):
+            return True
+        time.sleep(4)
+
+    # Sobrou um formulário DE VERDADE. Só sigo se o NAVEGADOR já o preencheu.
     try:
         cheio = formulario.evaluate("""() => {
             const s = document.querySelector('input[type=password]');
@@ -445,8 +515,11 @@ def _abrir_curso(pagina, url: str, tentativas: int = TENTATIVAS_POR_PAGINA,
             _anotar(f"a aula não montou na tentativa {n} (não é login)")
             time.sleep(5)
             continue
+        # Reentrar já na PRIMEIRA: ele passa o dia fora, e esperar uma segunda
+        # tentativa só para começar a agir é tempo parado sem ninguém para
+        # destravar. `_tela_de_login` acima já garante que é login mesmo.
         _anotar(f"a Kiwify pediu login na tentativa {n}")
-        if n >= 2 and _tentar_reentrar(pagina):
+        if _tentar_reentrar(pagina):
             return pagina, True
         time.sleep(5)
 
