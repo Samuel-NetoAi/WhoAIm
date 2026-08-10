@@ -323,6 +323,40 @@ class TestPuloPeloLogin(unittest.TestCase):
         pag = self.Pagina(["https://members.kiwify.com/login?club=x"])
         self.assertFalse(maratona._assentar(pag, 20))
 
+    def test_lenta_nao_e_deslogada(self):
+        """A confusão que matou a retomada da manhã seguinte.
+
+        A aula levou 35 s para montar, minha paciência era 40 s, e ao expirar
+        eu clicava em "Fazer login" — saindo de uma página que ia carregar
+        sozinha. "Não montou" pede ESPERAR; "deslogado" pede AGIR.
+        """
+        class Lenta:
+            url = "https://members.kiwify.com/a/b/c"
+
+            def evaluate(self, _):
+                return False       # ainda montando: sem vídeo, sem lista
+
+        self.assertFalse(maratona._tela_de_login(Lenta()))
+
+    def test_reconhece_a_parede_de_login_pelo_texto(self):
+        """A Kiwify às vezes mantém o endereço da aula e troca o conteúdo."""
+        class Parede:
+            url = "https://members.kiwify.com/a/b/c"
+
+            def evaluate(self, script):
+                return "Acessar" in script    # o teste do texto casa
+
+        self.assertTrue(maratona._tela_de_login(Parede()))
+
+    def test_reconhece_pelo_endereco(self):
+        class NoLogin:
+            url = "https://members.kiwify.com/login?club=x"
+
+            def evaluate(self, _):
+                raise RuntimeError("nem precisa perguntar")
+
+        self.assertTrue(maratona._tela_de_login(NoLogin()))
+
     def test_pagina_sem_lista_nem_video_nao_conta_como_pronta(self):
         class Vazia:
             url = "https://members.kiwify.com/a/b/c"

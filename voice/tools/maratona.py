@@ -271,7 +271,14 @@ def _mandaram_parar() -> bool:
 
 
 # Quanto esperar a página parar de se mexer antes de julgar o que ela é.
-PACIENCIA_ASSENTAR = 60.0
+#
+# Medido: numa abertura fria a aula levou 35 SEGUNDOS para montar (com cache
+# quente eram 5 a 10). Com o limite anterior de 40 s a primeira tentativa
+# expirava por pouco — e o pior não era a espera perdida, era eu concluir
+# "pediu login" e clicar em "Fazer login com Kiwify", SAINDO de uma página que
+# ia carregar sozinha. Paciência de sobra custa segundos; impaciência custou a
+# retomada inteira desta manhã.
+PACIENCIA_ASSENTAR = 120.0
 
 _PRONTA = """() => !!document.querySelector('video')
    || document.querySelectorAll('ol li a[href]').length > 1"""
@@ -430,11 +437,15 @@ def _abrir_curso(pagina, url: str, tentativas: int = TENTATIVAS_POR_PAGINA,
             pagina = _reabrir(pagina, url)
             continue
 
-        if _assentar(pagina, 40):
+        if _assentar(pagina, PACIENCIA_ASSENTAR):
             return pagina, True
+        # Só age se for MESMO a tela de entrada. Se a página está apenas
+        # lenta, clicar em "Fazer login" me tira dela e piora tudo.
+        if not _tela_de_login(pagina):
+            _anotar(f"a aula não montou na tentativa {n} (não é login)")
+            time.sleep(5)
+            continue
         _anotar(f"a Kiwify pediu login na tentativa {n}")
-        # Da segunda em diante, antes de só recarregar, tenta de fato entrar:
-        # se a sessão caiu mesmo, recarregar mil vezes não traz ela de volta.
         if n >= 2 and _tentar_reentrar(pagina):
             return pagina, True
         time.sleep(5)
@@ -447,6 +458,27 @@ def _abrir_curso(pagina, url: str, tentativas: int = TENTATIVAS_POR_PAGINA,
         time.sleep(15)
         return _abrir_curso(None, url, tentativas=2, relancar=False)
     return pagina, False
+
+
+def _tela_de_login(pagina) -> bool:
+    """É a parede de login, ou só uma página lenta?
+
+    A distinção não é cosmética: "não carregou ainda" pede ESPERAR, e "está
+    deslogado" pede AGIR. Confundi as duas e agi sobre uma página que estava
+    apenas montando — o clique me tirou dela e transformou lentidão em falha.
+
+    Pelo endereço OU pelo texto: a Kiwify às vezes mantém o endereço da aula e
+    troca só o conteúdo pela tela de entrada.
+    """
+    try:
+        endereco = (pagina.url or "").lower()
+        if any(m in endereco for m in ("/login", "signin", "sign_in")):
+            return True
+        return bool(pagina.evaluate(
+            "() => /Acessar .rea de membros|Fazer login com Kiwify/i.test("
+            "document.body ? (document.body.innerText || '') : '')"))
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def _quadro_do_video(pagina, limite: float = ESPERA_PLAYER):
