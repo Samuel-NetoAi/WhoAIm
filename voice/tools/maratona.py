@@ -797,8 +797,17 @@ def _acompanhar(quadro, duracao: float, indice: int, total: int,
         # rede no meio do vídeo deixa o player TOCANDO e sem dados
         # (`paused` false), enquanto o fim o deixa pausado. Ninguém encosta
         # nesse navegador, então pausa espontânea passados 90% é fim de aula.
+        #
+        # A terceira condição veio da aula 5, que escapou das duas primeiras:
+        # o player congelou a mais de 20 s do fim e SEM se declarar pausado.
+        # O que denuncia o fim ali é outra coisa — eu já tinha gravado 37
+        # minutos de um vídeo de 35. Se o tempo gravado já cobre a duração
+        # inteira, não há mais aula para esperar. O `t >= d * 0.85` evita que
+        # uma reprodução lenta por buffer engane a conta no meio do vídeo.
+        gravado = _aula._segundos_de_aula()
         perto_do_fim = bool(d) and (t >= d - 20
-                                    or (info.get("parado") and t >= d * 0.90))
+                                    or (info.get("parado") and t >= d * 0.90)
+                                    or (gravado >= d and t >= d * 0.85))
 
         # Silêncio é a falha cara: dá para gravar uma aula inteira de nada.
         # 60 s bastam para distinguir uma abertura silenciosa de um vídeo mudo.

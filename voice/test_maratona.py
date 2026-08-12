@@ -252,6 +252,35 @@ class TestAcompanhar(unittest.TestCase):
         q = Quadro(self._andando(30) + congelado)
         self.assertEqual(maratona._acompanhar(q, 1290, 1, 3, "x"), "acabou")
 
+    def test_gravou_o_video_inteiro_entao_acabou(self):
+        """A aula 5 escapou das outras duas saídas, no uso real.
+
+        O player congelou a mais de 20 s do fim e sem se declarar pausado.
+        O que denunciava o fim era o relógio da gravação: 37 minutos no disco
+        para um vídeo de 35. Custou 2 minutos de silêncio e uma aula sem marca.
+        """
+        from tools import aula as _aula
+
+        antes = dict(_aula._estado)
+        _aula._estado["inicio"] = self._time.monotonic() - 2230   # 37 min
+        _aula._estado["tempo_pausado"] = 0.0
+        _aula._estado["pausada_desde"] = None
+        try:
+            congelado = [{"t": 1200.0, "d": 2113.0, "fim": False,
+                          "parado": False}] * 300
+            q = Quadro(self._andando(30) + congelado)
+            # t = 1200 de 2113 é 57%: longe do fim pelos outros critérios.
+            self.assertEqual(maratona._acompanhar(q, 2113, 1, 3, "x"),
+                             "o vídeo travou", "57% não pode virar 'acabou'")
+            congelado = [{"t": 1900.0, "d": 2113.0, "fim": False,
+                          "parado": False}] * 300
+            q = Quadro(self._andando(30) + congelado)
+            self.assertEqual(maratona._acompanhar(q, 2113, 1, 3, "x"),
+                             "acabou")
+        finally:
+            _aula._estado.clear()
+            _aula._estado.update(antes)
+
     def test_travar_no_meio_continua_sendo_travar(self):
         """Perto do fim é fim; no meio do vídeo é defeito de verdade."""
         parado = [{"t": 300.0, "d": 1290.0, "fim": False, "parado": True}] * 300
