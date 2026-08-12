@@ -421,7 +421,119 @@ def _blocos_de_regras(texto: str) -> list[str]:
     return saida
 
 
+CONSOLIDADAS = "regras-consolidadas.md"
+
+_PROMPT_CONSOLIDAR = """Você vai juntar as regras extraídas de um curso sobre o
+ALGORITMO DO YOUTUBE, comprado pelo Samuel, dono do canal WhoIAm.
+
+Leia TODOS os arquivos `regras.md` em {pasta}/aulas/*/regras.md. São {n_aulas}
+aulas e cerca de {n_regras} regras — muita coisa repetida, porque um curso de
+marketing insiste no mesmo ponto em aulas diferentes.
+
+Escreva {saida} com a versão consolidada. Estrutura obrigatória:
+
+Uma seção `# <decisão>` para cada uma destas, NESTA ORDEM, pulando as que não
+tiverem regra nenhuma: titulo, thumbnail, descricao, tags, quando-postar,
+retencao, ctr, nicho, tema, canal.
+
+Dentro de cada seção, uma regra por bloco:
+
+## <a regra em uma frase imperativa>
+- **Por quê:** o motivo, na versão mais completa entre as fontes
+- **Fonte:** todas as aulas e minutos em que ela apareceu, separados por `;`
+- **Confiança:** alta | média | baixa
+
+AS QUATRO COISAS QUE IMPORTAM AQUI:
+
+1. FUNDIR o que é a mesma regra dita de formas diferentes. Uma regra que
+   aparece em quatro aulas é mais forte que uma que apareceu em uma — e isso
+   só fica visível se você guardar TODAS as fontes no mesmo bloco. Nunca jogue
+   fonte fora.
+2. NÃO INVENTAR. Nada de completar com o que você sabe de YouTube. Se as aulas
+   não disseram, não existe. O valor disto é ser o que o curso ensinou.
+3. Uma seção final `# Conflitos`, e ela é o ponto mais importante do arquivo:
+   quando duas aulas se contradizem (uma diz título curto, outra diz longo),
+   ponha as duas lado a lado com suas fontes e NÃO escolha por conta própria.
+   Quem decide é o Samuel. Se você realmente não achar conflito nenhum, diga
+   "nenhum conflito encontrado" — mas procure de verdade antes.
+4. Preferir o específico. "Título entre 40 e 60 caracteres" vale; "faça bons
+   títulos" não vale nada e deve ser descartado na fusão.
+
+No fim, uma seção `# Descartadas na fusão` listando em uma linha cada regra
+genérica demais que você tirou — para o Samuel conferir que não perdeu nada."""
+
+
+def consolidar(curso: str | None = None) -> str:
+    """Junta as 38 extrações num arquivo só, agrupado por DECISÃO.
+
+    Sem este passo o arquivo de referência da skill vira ruído: 38 aulas de um
+    curso de marketing repetem o mesmo conselho e às vezes se contradizem, e um
+    OMEGA com 550 regras soltas consegue citar o curso para justificar
+    qualquer coisa — o que é pior que não citar nada.
+    """
+    curso = curso or _aula.curso_atual()
+    pasta = _pasta_do_curso(curso)
+    arquivos = sorted(pasta.glob("aulas/*/regras.md"))
+    if not arquivos:
+        return ("Não há regras extraídas ainda. Diga 'processar curso' "
+                "primeiro.")
+
+    executavel = _resolver_claude()
+    if executavel is None:
+        return "O Claude Code CLI não está instalado."
+
+    n_regras = sum(a.read_text(encoding="utf-8").count("**Fonte:**")
+                   for a in arquivos)
+    saida = pasta / CONSOLIDADAS
+    instrucao = pasta / "_instrucao-consolidar.md"
+    try:
+        instrucao.write_text(_PROMPT_CONSOLIDAR.format(
+            pasta=pasta, saida=saida, n_aulas=len(arquivos),
+            n_regras=n_regras), encoding="utf-8")
+    except Exception as e:  # noqa: BLE001
+        return f"Não consegui gravar a instrução: {str(e)[:60]}"
+
+    # Instrução por arquivo, pelo mesmo motivo de `extrair_regras`: no Windows
+    # o cmd.exe corta a linha de comando na primeira quebra de linha.
+    pedido = (f"Leia {instrucao} e faça exatamente o que está escrito lá. "
+              "O arquivo é a instrução completa, não um texto para resumir.")
+    try:
+        proc = subprocess.Popen(
+            [executavel, "-p", pedido, "--permission-mode", "acceptEdits",
+             "--allowedTools", "Read", "Write", "Glob", "Grep"],
+            cwd=str(AI_PROJECT_ROOT), stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, text=True, encoding="utf-8",
+            errors="replace", shell=E_WINDOWS)
+        _estado["proc"] = proc
+        fora, erro = proc.communicate(timeout=3600)
+    except subprocess.TimeoutExpired:
+        _matar(proc)
+        return "A consolidação passou de uma hora."
+    except Exception as e:  # noqa: BLE001
+        return f"Falhou ao chamar o Claude: {str(e)[:80]}"
+
+    if not saida.exists():
+        return (f"O Claude terminou sem gravar {CONSOLIDADAS}. "
+                + ((fora or "") + (erro or ""))[-200:])
+    texto = saida.read_text(encoding="utf-8")
+    return (f"Consolidei {n_regras} regras de {len(arquivos)} aulas em "
+            f"{texto.count(chr(10) + '## ')} regras únicas. "
+            "Diga 'revisar regras' para aprovar.")
+
+
 def propostas(curso: str | None = None) -> list[tuple[Path, str]]:
+    """As regras à espera de aprovação.
+
+    Quando existe o arquivo consolidado, ele MANDA: aprovar 550 regras soltas,
+    com a mesma coisa repetida quatro vezes, é trabalho que ninguém faz até o
+    fim — e trabalho que não se faz vira regra nenhuma valendo.
+    """
+    curso = curso or _aula.curso_atual()
+    juntas = _pasta_do_curso(curso) / CONSOLIDADAS
+    if juntas.exists():
+        return [(juntas.parent, bloco) for bloco
+                in _blocos_de_regras(juntas.read_text(encoding="utf-8"))]
+
     saida = []
     for p in aulas(curso):
         arq = p / "regras.md"

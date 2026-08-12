@@ -66,11 +66,26 @@ def _project_dir(creature: str) -> Path:
     return AI_PROJECT_ROOT / "Criaturas" / creature / f"{_slugify(creature)}-video"
 
 
+# O nome falado de cada fase. Serve de rótulo E de lista do que é aceito:
+# antes havia duas checagens separadas com as fases escritas à mão, e acrescentar
+# uma terceira teria deixado a validação para trás em silêncio.
+ROTULOS = {
+    "pesquisa": "pesquisa e dossiê",
+    "model-sheets": "roteiro e model sheets",
+    "storyboards": "storyboards e prompts",
+    "producao": "roteiro e prompts",
+}
+
+
 def _arquivos_da_fase(creature: str, phase: str) -> list[Path]:
     """O que cada fase promete gravar — usado para conferir se de fato gravou."""
     notes = _project_dir(creature) / "notes"
     if phase == "pesquisa":
         return [notes / "dossie.md"]
+    if phase == "model-sheets":
+        return [notes / "roteiro.md", notes / "model-sheets.md"]
+    if phase == "storyboards":
+        return [notes / "prompts.md"]
     return [notes / "roteiro.md", notes / "prompts.md"]
 
 
@@ -133,6 +148,29 @@ def _run_claude(creature: str, phase: str) -> None:
             f"Use a skill pesquisa-seres para montar o dossiê completo de {creature}. "
             f"Salve o dossiê final em {notes / 'dossie.md'}."
         ),
+        # PARA no checkpoint que a própria skill já tem (passo 3 do FLUXO
+        # GERAL). O motivo é dinheiro e tempo: se a cara de um personagem sair
+        # errada, descobrir isso depois de catorze blocos de storyboard custa
+        # os catorze. O model sheet é o contrato de consistência visual que
+        # todos os storyboards referenciam — ele tem que ser aprovado antes.
+        "model-sheets": (
+            f"Use a skill whoiam para {creature}, a partir do dossiê em "
+            f"{notes / 'dossie.md'}. Faça SOMENTE até o checkpoint do passo 3 do "
+            f"FLUXO GERAL: o Documento 1 (roteiro de narração) e a BÍBLIA DE "
+            f"PERSONAGENS com um MODEL SHEET ultra-realista para cada "
+            f"personagem recorrente. NÃO gere storyboards nem prompts Seedance "
+            f"agora. Salve o roteiro em {notes / 'roteiro.md'} e os model sheets "
+            f"em {notes / 'model-sheets.md'}."
+        ),
+        "storyboards": (
+            f"Use a skill whoiam para {creature}. O roteiro já aprovado está em "
+            f"{notes / 'roteiro.md'} e os model sheets aprovados em "
+            f"{notes / 'model-sheets.md'} — use os model sheets como contrato "
+            f"de consistência visual, não invente aparência nova. Gere agora o "
+            f"Documento 2 (storyboards) e o Documento 3 (prompts Seedance) e "
+            f"salve tudo em {notes / 'prompts.md'}."
+        ),
+        # Atalho "gera tudo de uma vez", para quando ele confiar no personagem.
         "producao": (
             f"Use a skill whoiam para gerar o pacote de produção de {creature} "
             f"a partir do dossiê em {notes / 'dossie.md'}. "
@@ -141,7 +179,7 @@ def _run_claude(creature: str, phase: str) -> None:
         ),
     }[phase]
     executavel = _resolver_claude() or "claude"
-    rotulo = "pesquisa" if phase == "pesquisa" else "roteiro e prompts"
+    rotulo = ROTULOS.get(phase, "roteiro e prompts")
     inicio = time.monotonic()
 
     # Sinal de vida: sem isto, uma pesquisa de dez minutos parece um travamento.
@@ -286,8 +324,8 @@ def pipeline_criatura(args: dict) -> str:
     phase = (args.get("phase") or "pesquisa").strip()
     if not creature:
         return "Me diga o nome da criatura."
-    if phase not in ("pesquisa", "producao"):
-        return "A fase precisa ser pesquisa ou producao."
+    if phase not in ROTULOS:
+        return f"Não conheço a fase {phase}. Tenho: {', '.join(ROTULOS)}."
 
     # Um ser com dois nomes viraria dois projetos (foi o que aconteceu com
     # "Pennywise" e "IT"). Avisa em vez de pesquisar de novo o que já existe.
@@ -321,7 +359,7 @@ def pipeline_criatura(args: dict) -> str:
     _current.update({"running": True, "creature": creature, "result": None,
                      "proc": None, "cancelado": False})
     threading.Thread(target=_run_claude, args=(creature, phase), daemon=True).start()
-    nome_fase = "pesquisa e dossiê" if phase == "pesquisa" else "roteiro e prompts"
+    nome_fase = ROTULOS.get(phase, "roteiro e prompts")
     return (
         f"Iniciei a fase de {nome_fase} da criatura {creature} com o Claude. "
         "Leva alguns minutos — vou avisando o andamento e falo quando terminar."

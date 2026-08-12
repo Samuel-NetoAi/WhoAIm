@@ -213,16 +213,29 @@ class TestFalaDeOutroProcesso(unittest.TestCase):
         import threading
         import time as _t
 
+        def esperar(valor, recado, limite=6.0):
+            """Espera a CONDIÇÃO, não um relógio.
+
+            A versão com `sleep(0.6)` fixo falhou uma vez com a máquina
+            ocupada extraindo as regras do curso: o vigia poll a cada 0,2 s,
+            e sob carga isso escorrega. Teste que quebra por carga vira
+            alarme falso, e alarme falso a gente aprende a ignorar.
+            """
+            fim = _t.monotonic() + limite
+            while _t.monotonic() < fim:
+                if aula._em_silencio() is valor:
+                    return
+                _t.sleep(0.1)
+            self.fail(recado)
+
         aula._AVISO_DE_FALA.write_text("999999", encoding="utf-8")
         aula._estado["gravando"] = True
         aula._parar.clear()
         threading.Thread(target=aula._vigiar_fala_de_fora, daemon=True).start()
         try:
-            _t.sleep(0.6)
-            self.assertTrue(aula._em_silencio(), "não viu o outro processo")
+            esperar(True, "não viu o outro processo")
             aula._AVISO_DE_FALA.unlink()
-            _t.sleep(0.6)
-            self.assertFalse(aula._em_silencio(), "não voltou sozinho")
+            esperar(False, "não voltou sozinho")
         finally:
             aula._estado["gravando"] = False
             aula._parar.set()

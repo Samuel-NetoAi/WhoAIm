@@ -55,6 +55,10 @@ Suas capacidades reais são as ferramentas:
   sempre que o senhor mandar iniciar ou encerrar, dito de qualquer jeito.
   NUNCA diga que parou sem chamar a ferramenta — e se ele perguntar se a aula
   foi gravada, consulte 'situacao' em vez de responder de memória.
+- fases: a espinha do canal. Todo vídeo passa por 0 pesquisa, 1 model sheets,
+  2 storyboards, 3 vídeos, 4 edição, 5 publicação. Ao TERMINAR uma fase, diga
+  qual é a próxima e o que ela precisa dele — ele pediu isso para não decorar
+  comando. Nunca diga que uma fase está pronta sem consultar 'situacao'.
 - assistir_curso: assiste o curso COMPRADO inteiro sozinho — abre aula por
   aula no navegador, dá play, grava e vai para a próxima. Use quando ele
   mandar assistir "o curso", "tudo", "as aulas todas". Para gravar UMA aula
@@ -283,6 +287,30 @@ TOOLS = [
     },
     {
         "type": "function",
+        "name": "fases",
+        "description": (
+            "As seis fases de um vídeo do canal: 0 pesquisa, 1 model sheets, "
+            "2 storyboards, 3 vídeos, 4 edição, 5 publicação. 'comecar' dispara "
+            "uma fase; 'seguir' avança de onde a criatura parou; 'situacao' diz "
+            "em que fase cada criatura está. Use SEMPRE que ele falar em fase, "
+            "ou disser 'pode seguir' / 'em que pé estamos'. Ao terminar uma "
+            "fase, diga qual é a próxima e o que ela precisa dele — é assim que "
+            "ele não precisa decorar comando."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "acao": {"type": "string",
+                         "enum": ["comecar", "seguir", "situacao"]},
+                "criatura": {"type": "string"},
+                "numero": {"type": "integer",
+                           "description": "0 a 5, só para 'comecar'."},
+            },
+            "required": ["acao"],
+        },
+    },
+    {
+        "type": "function",
         "name": "assistir_curso",
         "description": (
             "Assiste o curso inteiro sozinho: abre cada aula no navegador, dá "
@@ -439,6 +467,22 @@ def make_tool_executor(ui):
             return aula.retomar_aula()
         return aula.situacao()
 
+    def fases(args: dict) -> str:
+        from tools import fases as _fases
+
+        acao = (args.get("acao") or "situacao").strip()
+        criatura = (args.get("criatura") or "").strip()
+        if acao == "comecar":
+            return _fases.comecar(criatura, int(args.get("numero") or 0), ui)
+        if acao == "seguir":
+            if not criatura:
+                vivas = _fases.em_andamento()
+                if len(vivas) != 1:
+                    return "De qual criatura? " + _fases.situacao()
+                criatura = vivas[0]
+            return _fases.seguir(criatura, ui)
+        return _fases.situacao(criatura)
+
     def assistir_curso(args: dict) -> str:
         from tools import maratona
 
@@ -471,6 +515,7 @@ def make_tool_executor(ui):
         "apagar": apagar,
         "conferir": conferir,
         "trecho_recente": trecho_recente,
+        "fases": fases,
         "assistir_curso": assistir_curso,
         "gravar_aula": gravar_aula,
         "avaliar_seo": avaliar_seo,

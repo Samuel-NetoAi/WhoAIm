@@ -67,6 +67,23 @@ AJUDA = """# Comandos (funcionam sem créditos)
 > estrangeira ("dossiê" já virou *torcedor*). As formas em inglês continuam
 > valendo quando você digita.
 
+**As seis fases** — *se você lembrar só disto, já dá para tocar o canal*
+
+Todo vídeo passa pelas mesmas seis etapas. Diga a fase e a criatura; ao
+terminar uma, **ele mesmo anuncia a próxima** e o que ela precisa de você.
+
+- **`fase 0 da <criatura>`** — Pesquisa: o dossiê, com fontes
+- **`fase 1`** — Model sheets: roteiro + a cara de cada personagem, e **para
+  aí** para você aprovar antes dos storyboards
+- **`fase 2`** — Storyboards e prompts de vídeo
+- **`fase 3`** — Vídeos *(o MCP de geração ainda não está ligado: ele entrega
+  os prompts e diz que está esperando você)*
+- **`fase 4`** — Edição: narração, trilha, mapa de corte
+- **`fase 5`** — Publicação: pacote de SEO e o formulário aberto. **Ele nunca
+  aperta publicar**
+- **`pode seguir`** — avança de onde parou, sem você dizer a fase
+- **`em que pé estamos`** — todas as criaturas e a fase de cada uma
+
 **Ver conteúdo**
 - **`pesquisa <criatura>`** — exibe a pesquisa na tela *(= dossiê)*
 - **`roteiro <criatura>`** — exibe o roteiro de narração
@@ -141,6 +158,10 @@ AJUDA = """# Comandos (funcionam sem créditos)
   janela (`login curso`). Enquanto rodar, não toque outro áudio no PC: eu
   gravo o som que SAI daqui. **`como está o curso`** / **`parar o curso`**
 - **`processar curso`** — transcreve e extrai as regras *(demora; avisa no fim)*
+- **`consolidar regras`** — junta as 38 extrações num arquivo só, agrupado por
+  DECISÃO (título, thumb, descrição, quando postar...), funde o que se repete
+  guardando todas as fontes, e separa numa seção à parte o que as aulas
+  **contradizem** — para você decidir, não eu
 - **`revisar regras`** — mostra as regras propostas com a aula e o minuto;
   **`aprovar todas`** / **`aprovar 1 3`** / **`descartar 2`**
 - **`apagar a aula 2`** → depois **`confirmar`**. Serve para quando você teve
@@ -342,6 +363,66 @@ def _e_parar_maratona(baixo: str) -> bool:
     palavras = [_norm(p) for p in baixo.split()]
     return (any(p in ("curso", "maratona") for p in palavras)
             and any(p in _FIM_DE_AULA for p in palavras))
+
+
+# As seis fases do canal. Isto é o que o Samuel pediu para não precisar
+# decorar quarenta comandos: um vocabulário só, "vamos começar a fase 0".
+#
+# "fase" é obrigatória e o número também — sem os dois, "vamos começar" e
+# "pode seguir" ficariam ambíguos com meia dúzia de outras coisas que ele diz.
+_NUMERO_DA_FASE = re.compile(r"\bfase\s+(\d)\b", re.I)
+
+# "zero" falado costuma sair como palavra, e o Whisper varia entre as duas
+# formas na mesma sessão.
+_FALADOS = {"zero": 0, "um": 1, "uma": 1, "dois": 2, "duas": 2, "tres": 3,
+            "três": 3, "quatro": 4, "cinco": 5}
+
+
+def _fase_pedida(baixo: str) -> int | None:
+    achado = _NUMERO_DA_FASE.search(baixo)
+    if achado:
+        return int(achado.group(1))
+    palavras = [_norm(p) for p in baixo.split()]
+    if "fase" not in palavras:
+        return None
+    for i, p in enumerate(palavras):
+        if p == "fase" and i + 1 < len(palavras):
+            return _FALADOS.get(palavras[i + 1])
+    return None
+
+
+# Palavras que dizem O QUE FAZER com a fase, e não DE QUEM é ela.
+_LIXO_NA_FASE = {
+    "fase", "vamos", "vamo", "comecar", "começar", "comeca", "começa",
+    "iniciar", "inicia", "rodar", "roda", "fazer", "faz", "da", "do", "de",
+    "a", "o", "as", "os", "na", "no", "pra", "para", "quero", "queria",
+    "pode", "podemos", "bora", "agora", "omega", "ômega", "senhor", "por",
+    "favor", "criatura", "ja", "já", "e", "entao", "então",
+    "zero", "um", "uma", "dois", "duas", "tres", "três", "quatro", "cinco",
+}
+
+
+def _criatura_da_fase(raw: str) -> str:
+    palavras = [p for p in raw.split()
+                if _norm(p.strip(",.!?")) not in _LIXO_NA_FASE
+                and not p.strip(",.!?").isdigit()]
+    return " ".join(palavras).strip(" ,.")
+
+
+def _e_seguir(baixo: str) -> bool:
+    """"pode seguir" — avança de onde parou, sem precisar dizer a fase.
+
+    Não conflita com a retomada de aula, e a exclusão usa o MESMO detector
+    (`_sobre_a_aula`) em vez de uma lista própria: a primeira versão listava
+    "aula/gravacao/curso" à mão e deixava passar "voltei, pode continuar
+    GRAVANDO" — que avançaria uma fase em vez de retomar a gravação, no meio
+    de uma aula. Duas listas para o mesmo conceito divergem sempre.
+    """
+    palavras = [_norm(p) for p in baixo.split()]
+    if _sobre_a_aula(baixo) or "curso" in palavras:
+        return False
+    return any(p in ("seguir", "segue", "prosseguir", "prossiga", "continuar",
+                     "continua", "avancar", "avanca", "avance") for p in palavras)
 
 
 def _e_pedido_de_aula(baixo: str) -> bool:
@@ -703,6 +784,12 @@ def handle(text: str, ui) -> str | None:
 
         return _curso.andamento()
 
+    if _disse(low, "consolidar", "consolida", "juntar", "junta") and             _disse(low, "regras"):
+        from . import curso as _curso
+
+        ui.write_log("SYS: consolidando as regras das aulas...")
+        return _curso.consolidar()
+
     if _disse(low, "regras"):
         from . import curso as _curso
 
@@ -713,6 +800,45 @@ def handle(text: str, ui) -> str | None:
         from . import curso as _curso
 
         return _curso.decidir(raw)
+
+    # ----- AS SEIS FASES: a espinha de tudo -----
+    #
+    # Vem cedo, e antes do curso, porque "fase 0" é a entrada que ele quer
+    # usar no lugar de decorar comando. Só dispara com a palavra "fase" e um
+    # número junto — sem os dois, nada aqui é acionado.
+    _n_fase = _fase_pedida(low)
+    if _n_fase is not None:
+        from . import fases as _fases
+
+        alvo = _criatura_da_fase(raw)
+        if not alvo:
+            return ("De qual criatura, senhor? Diga por exemplo "
+                    f"'fase {_n_fase} da Medusa'.")
+        pasta, candidatos = _resolver_projeto(alvo)
+        if not pasta and candidatos:
+            return _ajuda_projeto(alvo, candidatos)
+        nome = pasta.name if pasta else alvo
+        return _fases.comecar(nome, _n_fase, ui)
+
+    if _disse(low, "em que pe estamos", "em que pé estamos", "onde estamos",
+              "como esta a producao", "como está a produção", "as fases",
+              "situacao das fases", "situação das fases"):
+        from . import fases as _fases
+
+        return _fases.situacao()
+
+    if _e_seguir(low):
+        from . import fases as _fases
+
+        alvo = _criatura_da_fase(raw)
+        pasta, _ = _resolver_projeto(alvo) if alvo else (None, [])
+        if pasta is None:
+            # Sem nome, seguir a única que está no meio do caminho.
+            emcurso = _fases.em_andamento()
+            if len(emcurso) != 1:
+                return ("De qual criatura eu sigo? " + _fases.situacao())
+            return _fases.seguir(emcurso[0], ui)
+        return _fases.seguir(pasta.name, ui)
 
     # ----- assistir o CURSO INTEIRO sozinho -----
     #
