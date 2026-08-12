@@ -141,6 +141,44 @@ def cancelar() -> str:
     return f"Cancelado. Parei o trabalho na {criatura}."
 
 
+# Qual número de fase cada trabalho do pipeline representa. Fica aqui, e não
+# em `fases.py`, para o pipeline não precisar importar o outro no topo — eles
+# se conhecem em círculo (fases chama pipeline para trabalhar, pipeline chama
+# fases para anotar), e o import tardio dentro da função é o que quebra o laço.
+_NUMERO_DA_FASE = {"pesquisa": 0, "model-sheets": 1, "storyboards": 2,
+                   "producao": 2}
+
+
+def _fim_de_fase(creature: str, phase: str) -> str:
+    """Anota que a fase terminou e devolve o anúncio da próxima.
+
+    É a peça que o Samuel pediu para não decorar quarenta comandos: terminada
+    uma fase, ele mesmo diz qual vem, o que ela entrega e o que precisa. E
+    quando a próxima é a 0 ou a 5, entra junto o que o curso ensinou sobre
+    tema, título e thumbnail — as duas fases em que ele quis o curso agindo
+    sozinho.
+    """
+    n = _NUMERO_DA_FASE.get(phase)
+    if n is None:
+        return ""
+    try:
+        from . import curso as _curso
+        from . import fases as _fases
+
+        _fases.marcar(creature, n, _fases.PRONTA)
+        recado = " " + _fases.anunciar(creature, n)
+        if n == 0:
+            # Fase 0 recém-fechada: é a hora de escolher ângulo e título, e é
+            # exatamente onde o curso tem o que dizer.
+            material = _curso.orientar(("tema", "titulo", "thumbnail"),
+                                       sobre=creature)
+            if material:
+                recado += "\n\n" + material
+        return recado
+    except Exception:  # noqa: BLE001 — anotar não pode derrubar o pipeline
+        return ""
+
+
 def _run_claude(creature: str, phase: str) -> None:
     notes = _ensure_project(creature) / "notes"
     prompt = {
@@ -258,6 +296,7 @@ def _run_claude(creature: str, phase: str) -> None:
                 _current["result"] = (
                     f"{rotulo.capitalize()} de {creature} concluída em {levou}. "
                     f"Gravei {lista} no projeto — já aparece no Studio, {onde}."
+                    + _fim_de_fase(creature, phase)
                 )
             else:
                 # Saiu com código 0 mas não escreveu nada: dizer "concluído"

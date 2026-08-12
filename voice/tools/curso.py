@@ -676,6 +676,38 @@ def avaliar(proposta: str, curso: str | None = None) -> str:
     )
 
 
+def orientar(decisoes: tuple[str, ...], sobre: str = "",
+             curso: str | None = None) -> str:
+    """As regras aprovadas que valem para ESTAS decisões, e mais nada.
+
+    O lado proativo do `avaliar`: ele reage a uma proposta, este chega antes.
+    Mesmo desenho dos dois — devolve MATERIAL, não veredito, porque quem tem o
+    contexto da conversa é o modelo. O que este módulo garante é que a fala
+    saia de regra aprovada com fonte, e não de palpite com cara de curso.
+
+    O recorte por decisão existe porque despejar quinhentas regras a cada fase
+    seria ruído: na fase 0 o que importa é tema e título; na 5, o pacote todo.
+    """
+    conteudo = _texto_aprovado(curso or _aula.curso_atual())
+    if not conteudo.strip():
+        return ""
+
+    # Cada bloco começa em "## "; a etiqueta de decisão vive dentro dele.
+    blocos = [b for b in _blocos_de_regras(conteudo)
+              if any(f"**Decisão:** {d}" in b or f"# {d}" in b
+                     for d in decisoes)]
+    if not blocos:
+        return ""
+    alvo = f" para {sobre}" if sobre else ""
+    return (
+        f"REGRAS DO CURSO APROVADAS PELO SENHOR{alvo} "
+        f"({', '.join(decisoes)}):\n\n" + "\n\n".join(blocos) + "\n\n---\n"
+        "Diga em duas ou três frases o que estas regras recomendam aqui, "
+        "SEMPRE citando a aula e o minuto. Não acrescente conselho seu: se o "
+        "curso não falou de algo, esse algo não entra."
+    )
+
+
 def andamento() -> str:
     if _estado["rodando"]:
         return (f"Processando {_estado['aula'] or 'o curso'}. "

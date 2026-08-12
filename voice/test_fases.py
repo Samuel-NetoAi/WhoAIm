@@ -153,6 +153,89 @@ class TestEstado(unittest.TestCase):
         self.assertIn("fase 1", r)
 
 
+class TestCursoAgindoSozinho(unittest.TestCase):
+    """O curso entra nas fases 0 e 5 — e cala a boca no resto.
+
+    A trava que importa é a mesma de `tools/web.py`: sem fonte, não afirma.
+    Um OMEGA que opina de SEO sem regra aprovada, com voz de quem leu o curso,
+    é pior que um OMEGA calado — porque o Samuel vai acreditar.
+    """
+
+    def setUp(self):
+        import tempfile
+
+        from tools import aula as _aula
+        from tools import curso as _curso
+
+        from tools import pipeline
+
+        self.tmp = tempfile.TemporaryDirectory()
+        raiz = Path(self.tmp.name)
+        self._cursos = _aula.CURSOS
+        # ISOLAR A RAIZ TAMBÉM. Sem isto o teste lia o estado da Medusa DE
+        # VERDADE — e `marcar` teria escrito na pasta real dela.
+        self._raiz, self._raiz_pipe = fases.AI_PROJECT_ROOT, pipeline.AI_PROJECT_ROOT
+        fases.AI_PROJECT_ROOT = pipeline.AI_PROJECT_ROOT = raiz
+        _aula.CURSOS = raiz / "Cursos"
+        self.pasta = _aula.CURSOS / _aula.curso_atual()
+        self.pasta.mkdir(parents=True)
+        (raiz / "Criaturas" / "Medusa" / "medusa-video" / "notes").mkdir(parents=True)
+        for n in range(5):
+            fases.marcar("Medusa", n, fases.PRONTA)
+        self.curso = _curso
+
+    def tearDown(self):
+        import shutil
+
+        from tools import aula as _aula
+
+        from tools import pipeline
+
+        _aula.CURSOS = self._cursos
+        fases.AI_PROJECT_ROOT = self._raiz
+        pipeline.AI_PROJECT_ROOT = self._raiz_pipe
+        shutil.rmtree(self.tmp.name, ignore_errors=True)
+
+    def _aprovar(self, texto):
+        (self.pasta / "regras-aprovadas.md").write_text(texto, encoding="utf-8")
+
+    def test_sem_regra_aprovada_nao_inventa(self):
+        self.assertEqual(self.curso.orientar(("titulo",)), "")
+
+    def test_traz_so_as_regras_da_decisao_pedida(self):
+        self._aprovar(
+            "## Título entre 40 e 60 caracteres\n"
+            "- **Decisão:** titulo\n- **Fonte:** aula 1 — [03:20]\n\n"
+            "## Poste terça e quinta às 19h\n"
+            "- **Decisão:** quando-postar\n- **Fonte:** aula 7 — [11:02]\n")
+        material = self.curso.orientar(("titulo",))
+        self.assertIn("40 e 60 caracteres", material)
+        self.assertNotIn("terça e quinta", material,
+                         "trouxe regra de outra decisão; na fase 0 isso é ruído")
+
+    def test_manda_citar_a_fonte(self):
+        self._aprovar("## Use número no título\n- **Decisão:** titulo\n"
+                      "- **Fonte:** aula 1 — [03:20]\n")
+        material = self.curso.orientar(("titulo",))
+        self.assertIn("citando a aula e o minuto", material)
+        self.assertIn("[03:20]", material)
+        self.assertIn("não acrescente conselho seu",
+                      material.lower().replace("nao", "não"))
+
+    def test_a_fase_5_puxa_o_pacote_inteiro(self):
+        self._aprovar("## Thumb com rosto e contraste\n"
+                      "- **Decisão:** thumbnail\n- **Fonte:** aula 9 — [02:03]\n")
+        r = fases.comecar("Medusa", 5)
+        self.assertIn("Thumb com rosto", r,
+                      "a fase 5 é a que mais rende curso; veio sem regra")
+
+    def test_a_fase_5_continua_sem_publicar(self):
+        self._aprovar("## Qualquer regra\n- **Decisão:** titulo\n"
+                      "- **Fonte:** aula 1 — [00:10]\n")
+        r = fases.comecar("Medusa", 5)
+        self.assertIn("botão é seu", r)
+
+
 class TestPipelineAceitaAsFases(unittest.TestCase):
     """As fases 1 e 2 foram separadas — o pipeline precisa conhecer as duas."""
 

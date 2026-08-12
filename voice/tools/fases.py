@@ -49,13 +49,13 @@ FASES: tuple[dict, ...] = (
         "n": 0, "nome": "Pesquisa", "chave": "pesquisa",
         "entrega": "o dossiê da criatura, com fontes e veredito por afirmação",
         "executor": "pesquisa",
-        "precisa": "só o nome da criatura",
+        "precisa": "só do nome da criatura",
     },
     {
         "n": 1, "nome": "Model sheets", "chave": "model-sheets",
         "entrega": "o roteiro de narração e a cara de cada personagem",
         "executor": "model-sheets",
-        "precisa": "o dossiê da fase 0",
+        "precisa": "do dossiê da fase 0",
         # Ele escolheu separar 1 e 2 justamente por isto.
         "para_aqui": ("aprovar a cara dos personagens antes dos storyboards — "
                       "errar o personagem depois de catorze blocos custa os catorze"),
@@ -64,13 +64,13 @@ FASES: tuple[dict, ...] = (
         "n": 2, "nome": "Storyboards", "chave": "storyboards",
         "entrega": "os storyboards e os prompts de vídeo (Seedance)",
         "executor": "storyboards",
-        "precisa": "os model sheets aprovados na fase 1",
+        "precisa": "dos model sheets aprovados na fase 1",
     },
     {
         "n": 3, "nome": "Vídeos", "chave": "videos",
         "entrega": "os clipes de cada cena",
         "executor": None,
-        "precisa": "os prompts da fase 2",
+        "precisa": "dos prompts da fase 2",
         "falta": ("o MCP de geração de vídeo ainda não está ligado nesta "
                   "máquina. Eu entrego os prompts prontos e você gera"),
     },
@@ -78,7 +78,7 @@ FASES: tuple[dict, ...] = (
         "n": 4, "nome": "Edição", "chave": "edicao",
         "entrega": "o vídeo montado, com narração e trilha",
         "executor": None,
-        "precisa": "os clipes da fase 3",
+        "precisa": "dos clipes da fase 3",
         "falta": ("a montagem é sua no Studio. Eu preparo a narração, o mapa "
                   "de edição e o plano de cortes"),
     },
@@ -86,7 +86,7 @@ FASES: tuple[dict, ...] = (
         "n": 5, "nome": "Publicação", "chave": "publicacao",
         "entrega": "o pacote de SEO e o vídeo anexado na janela do YouTube",
         "executor": None,
-        "precisa": "o vídeo montado da fase 4",
+        "precisa": "do vídeo montado da fase 4",
         "falta": ("eu levo até o formulário e PARO. Publicar é irreversível, "
                   "e o botão é seu"),
     },
@@ -250,15 +250,27 @@ def comecar(criatura: str, n: int, ui=None) -> str:
     anterior = por_numero(n - 1)
     if anterior and estado_de(criatura, n - 1) != PRONTA and \
             not _entregou(criatura, n - 1):
-        return (f"A fase {n} precisa de {fase['precisa']}, e a fase {n - 1} "
+        return (f"A fase {n} precisa {fase['precisa']}, e a fase {n - 1} "
                 f"({anterior['nome']}) ainda não terminou. Quer que eu comece "
                 f"por ela?")
 
     if not fase["executor"]:
         marcar(criatura, n, AGUARDANDO, fase["falta"])
-        return (f"Fase {n}, {fase['nome']}: {fase['falta']}. "
-                f"O que ela entrega é {fase['entrega']}. "
-                "Deixei anotado que está esperando você.")
+        resposta = (f"Fase {n}, {fase['nome']}: {fase['falta']}. "
+                    f"O que ela entrega é {fase['entrega']}. "
+                    "Deixei anotado que está esperando você.")
+        if n == 5:
+            # A publicação é a outra fase em que ele quis o curso agindo
+            # sozinho — e é a que mais rende: título, descrição, tags e
+            # thumbnail são decididos aqui, e é aqui que errar custa alcance.
+            from . import curso as _curso
+
+            material = _curso.orientar(
+                ("titulo", "thumbnail", "descricao", "tags", "quando-postar"),
+                sobre=criatura)
+            if material:
+                resposta += "\n\n" + material
+        return resposta
 
     from .pipeline import pipeline_criatura
 
