@@ -750,6 +750,11 @@ def _assistir_uma(pagina, curso: str, indice: int, total: int,
             f"({int(duracao) // 60}:{int(duracao) % 60:02d})")
 
     motivo = _acompanhar(quadro, duracao, indice, total, titulo)
+    # O MOTIVO precisa ficar escrito. Sem ele o diário só dizia "PAREI DE
+    # GRAVAR: 8 minutos" para um vídeo de 26, e descobrir se aquilo foi
+    # travamento, silêncio ou fim mal detectado exigia reconstruir a conta
+    # pelo número de telas. Uma palavra aqui economiza essa arqueologia.
+    _anotar(f"[{indice}/{total}] motivo: {motivo}")
     _anotar(f"[{indice}/{total}] {_aula.parar()[:160]}")
     if motivo == "acabou":
         _marcar_completa(pasta, titulo, duracao)
