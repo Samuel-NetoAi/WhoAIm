@@ -45,6 +45,23 @@ from .transcritor import TAXA, VAD, _preparar_cuda, ler_wav_16k
 
 MODELO = "large-v3-turbo"
 
+# Quantos prints o Claude pode abrir por aula.
+#
+# O Samuel escolheu extrair das 38 aulas "a fundo", e "a fundo" não pode
+# significar ler 96 imagens de uma aula só: são 1.595 prints no curso inteiro,
+# e leitura de imagem é o item mais caro da conta — dominaria tudo o resto.
+# Dez cobre os momentos em que a tela É o conteúdo (exemplo de título,
+# thumbnail, gráfico de CTR), que é para isso que o print existe. O nome do
+# arquivo é o segundo da aula, então a escolha pode ser guiada pela
+# transcrição em vez de ser uma varredura cega.
+TETO_TELAS = 10
+
+# As decisões que uma regra pode governar. Fixas de propósito: é por elas que a
+# consolidação agrupa 38 aulas por assunto, e vocabulário livre viraria vinte
+# sinônimos de "título".
+DECISOES = ("titulo", "thumbnail", "descricao", "tags", "quando-postar",
+            "retencao", "ctr", "nicho", "tema", "canal")
+
 # Jargão do curso. Mesmo mecanismo do viés de vocabulário dos comandos: dizer
 # ao decoder o que esperar ANTES, em vez de consertar depois. Sem isto "CTR"
 # vira "cetê erre" e "thumbnail" vira "tambinel".
@@ -179,15 +196,27 @@ _PROMPT = """Você está lendo a transcrição de uma aula de um curso sobre o
 ALGORITMO DO YOUTUBE, comprado pelo Samuel, dono do canal WhoIAm (mitologia e
 criaturas, vídeos feitos com IA).
 
-Leia {transcricao} e as imagens em {telas} (são prints da tela da aula: contêm
-exemplos de título, thumbnails e números de analytics que o áudio não carrega).
+Leia {transcricao} primeiro, inteira.
+
+Depois, os prints em {telas} — eles carregam o que o áudio não carrega (exemplo
+de título, thumbnail, número de analytics na tela). São muitos: **leia no
+máximo {teto_telas}**, e escolha pelos MINUTOS em que a transcrição indicar algo
+visual ("olha esse título aqui", "vê essa thumbnail", "esse gráfico"). O nome do
+arquivo é o segundo da aula, então dá para ir direto ao print do minuto certo.
+Não varra a pasta inteira: a maioria é o professor falando.
 
 Escreva {saida} com as REGRAS PRÁTICAS que a aula ensina. Formato, uma por bloco:
 
 ## <a regra em uma frase imperativa>
+- **Decisão:** uma de titulo | thumbnail | descricao | tags | quando-postar |
+  retencao | ctr | nicho | tema | canal
 - **Por quê:** o motivo que o professor deu
 - **Fonte:** {nome} — [mm:ss]{extra}
 - **Confiança:** alta | média | baixa
+
+A **Decisão** diz em que momento a regra serve, e é ela que depois agrupa as 38
+aulas por assunto em vez de por aula. Escolha UMA, a que mais se aproxima; se
+nenhuma servir, use `canal`.
 
 REGRAS DA EXTRAÇÃO, e elas importam mais que a quantidade:
 - Só escreva o que a AULA disse. Não complete com o que você sabe de YouTube:
@@ -218,15 +247,35 @@ def extrair_regras(pasta: Path) -> str:
 
     telas = pasta / "telas"
     n_telas = len(list(telas.glob("*.jpg"))) if telas.is_dir() else 0
-    prompt = _PROMPT.format(
-        transcricao=transcricao, telas=telas, saida=pasta / "regras.md",
-        nome=pasta.name,
-        extra=" (+ o print, quando o dado estiver na tela)" if n_telas else "",
-    )
+    instrucao = pasta / "_instrucao.md"
+    try:
+        instrucao.write_text(_PROMPT.format(
+            transcricao=transcricao, telas=telas, saida=pasta / "regras.md",
+            nome=pasta.name, teto_telas=TETO_TELAS,
+            extra=" (+ o print, quando o dado estiver na tela)" if n_telas else "",
+        ), encoding="utf-8")
+    except Exception as e:  # noqa: BLE001
+        return f"{pasta.name}: não consegui gravar a instrução ({str(e)[:60]})."
+
+    # O PROMPT VAI POR ARQUIVO, e a linha de comando leva só o caminho.
+    #
+    # No Windows o CLI é um .CMD, então o Popen roda com `shell=True` — e o
+    # cmd.exe CORTA a linha de comando na primeira quebra de linha. Este
+    # prompt tem quinze. Medido: o Claude recebia só "Você está lendo a
+    # transcrição de uma aula de um curso sobre o" e respondia "pode reenviar
+    # a mensagem completa?", saindo com código 0 e sem gravar nada. Seriam 38
+    # chamadas queimando crédito para produzir zero regra.
+    #
+    # O `pipeline.py` escapa disso porque o prompt dele é de uma linha só.
+    # Aqui o prompt é longo de propósito, então ele vira arquivo — que ainda
+    # tem a vantagem de ficar no disco para conferência quando a extração sair
+    # estranha.
+    pedido = (f"Leia {instrucao} e faça exatamente o que está escrito lá. "
+              "O arquivo é a instrução completa, não um texto para resumir.")
 
     try:
         proc = subprocess.Popen(
-            [executavel, "-p", prompt, "--permission-mode", "acceptEdits",
+            [executavel, "-p", pedido, "--permission-mode", "acceptEdits",
              "--allowedTools", "Read", "Write", "Glob", "Grep"],
             cwd=str(AI_PROJECT_ROOT),
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
