@@ -859,6 +859,29 @@ def _reabrir(pagina, url: str):
 INTERVALO_CUTUCADA = (600, 1200)   # 10 a 20 minutos, sorteado
 
 
+def _ocioso_ms() -> int:
+    """Ha quanto tempo o Windows acha que ninguem mexe na maquina.
+
+    E este relogio que decide apagar a tela e bloquear a sessao. Registrar o
+    valor no diario e o que torna a cutucada VERIFICAVEL: se um dia a tela
+    apagar mesmo assim, o diario dira se o numero estava zerando ou nao.
+    """
+    import ctypes
+    import ctypes.wintypes
+
+    class _Ultima(ctypes.Structure):
+        _fields_ = [("cbSize", ctypes.wintypes.UINT),
+                    ("dwTime", ctypes.wintypes.DWORD)]
+
+    try:
+        info = _Ultima()
+        info.cbSize = ctypes.sizeof(info)
+        ctypes.windll.user32.GetLastInputInfo(ctypes.byref(info))
+        return int(ctypes.windll.kernel32.GetTickCount() - info.dwTime)
+    except Exception:  # noqa: BLE001
+        return -1
+
+
 def _cutucar_o_windows(parar) -> None:
     """Sinal de vida para o Windows, de dez em dez ou vinte em vinte minutos.
 
@@ -870,9 +893,18 @@ def _cutucar_o_windows(parar) -> None:
 
     O QUE ELE NAO FAZ: nada de pausar/despausar o video, que era a ideia
     inicial. Pausar corta a gravacao no meio e deixa buraco na aula. E nada
-    de tecla comum, que digitaria dentro da pagina. Sobram dois gestos
-    inofensivos: mover o ponteiro um pixel e devolver, e apertar F15 — uma
-    tecla que teclado nenhum tem, inventada justamente para isto.
+    de tecla comum: no player `f` e tela cheia, espaco e `k` pausam, `m` muta
+    — qualquer uma estragaria a aula. F15 nao existe em teclado nenhum
+    (sobrou do padrao antigo), entao site algum liga funcao a ela. E nao
+    confundir com F5: F5 e 0x74 e recarrega a pagina; F15 e 0x7E.
+
+    E `SetCursorPos` NAO SERVE, medido: mexer o ponteiro por ali deixou o
+    relogio de ociosidade correndo (484984 -> 485031 ms). Ele reposiciona o
+    cursor sem passar pela fila de entrada. Quem zera de verdade e a entrada
+    INJETADA — `keybd_event` e `mouse_event` — as duas medidas levando o
+    relogio a 0. A pergunta do Samuel ("um F nao daria tela cheia?") foi o
+    que me fez medir em vez de supor, e metade do que eu tinha escrito era
+    enfeite.
     """
     import ctypes
     import ctypes.wintypes
@@ -881,17 +913,15 @@ def _cutucar_o_windows(parar) -> None:
     if os.name != "nt":
         return
     usuario = ctypes.windll.user32
-    F15, SOLTAR = 0x7E, 0x0002
+    F15, SOLTAR, MOVER = 0x7E, 0x0002, 0x0001
     while not parar.wait(random.randint(*INTERVALO_CUTUCADA)):
         try:
-            ponto = ctypes.wintypes.POINT()
-            if usuario.GetCursorPos(ctypes.byref(ponto)):
-                usuario.SetCursorPos(ponto.x + 1, ponto.y)
-                time.sleep(0.05)
-                usuario.SetCursorPos(ponto.x, ponto.y)
             usuario.keybd_event(F15, 0, 0, 0)
             usuario.keybd_event(F15, 0, SOLTAR, 0)
-            _anotar("cutucada: sinal de vida para o Windows")
+            # Um pixel para o lado e de volta: o ponteiro fica onde estava.
+            usuario.mouse_event(MOVER, 1, 0, 0, 0)
+            usuario.mouse_event(MOVER, -1, 0, 0, 0)
+            _anotar(f"cutucada: ocioso zerado ({_ocioso_ms()} ms)")
         except Exception as e:  # noqa: BLE001 — nao pode derrubar a maratona
             _anotar(f"cutucada falhou: {str(e)[:60]}")
 
