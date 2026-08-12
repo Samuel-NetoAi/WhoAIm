@@ -464,7 +464,7 @@ class TestReentrarSemSenha(unittest.TestCase):
     def test_NAO_envia_formulario_vazio(self):
         """Sem o navegador ter preenchido, enviar seria adivinhar senha."""
         pag = self.Pag(campos_cheios=False)
-        self.assertFalse(maratona._tentar_reentrar(pag))
+        self.assertFalse(maratona._entrar_por_formulario(pag, "http://x"))
         self.assertFalse(pag.enviou, "mandou um formulário que não estava cheio")
 
     def test_aperta_o_botao_quando_o_navegador_ja_preencheu(self):
@@ -472,20 +472,23 @@ class TestReentrarSemSenha(unittest.TestCase):
         passa por mim, e o preenchimento só ocorre no mesmo endereço em que
         ela foi salva — trava do navegador, não minha."""
         pag = self.Pag(campos_cheios=True)
-        maratona._tentar_reentrar(pag)
+        self.assertTrue(maratona._entrar_por_formulario(pag, "http://x"))
         self.assertTrue(pag.enviou)
 
-    def test_sem_botao_de_entrar_nao_inventa_caminho(self):
-        class Nada:
-            url = "https://members.kiwify.com/a/b/c"
-
-            def click(self, *a, **k):
-                raise RuntimeError("não existe")
+    def test_campo_ilegivel_e_tratado_como_vazio(self):
+        """Se eu não consigo nem perguntar, não é hora de apertar botão."""
+        class Cega:
+            enviou = False
 
             def evaluate(self, _):
-                return False
+                raise RuntimeError("página morreu")
 
-        self.assertFalse(maratona._tentar_reentrar(Nada()))
+            def click(self, *a, **k):
+                self.enviou = True
+
+        pag = Cega()
+        self.assertFalse(maratona._entrar_por_formulario(pag, "http://x"))
+        self.assertFalse(pag.enviou)
 
 
 class TestRetomarDepoisDeCair(unittest.TestCase):

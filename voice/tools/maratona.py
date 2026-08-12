@@ -42,6 +42,7 @@ import json
 import os
 import re
 import subprocess
+import threading
 import sys
 import time
 from datetime import datetime
@@ -280,8 +281,19 @@ def _mandaram_parar() -> bool:
 # retomada inteira desta manhã.
 PACIENCIA_ASSENTAR = 120.0
 
-_PRONTA = """() => !!document.querySelector('video')
-   || document.querySelectorAll('ol li a[href]').length > 1"""
+# JULGA-SE PELO CONTEÚDO, NUNCA PELO ENDEREÇO.
+#
+# A Kiwify é uma página só: depois de entrar pelo repasse, ela troca o miolo
+# pela aula e DEIXA o endereço em `/login`. Eu barrava justamente esse caso —
+# a aula estava tocando na tela, com o player e tudo, e eu insistia que era
+# tela de login porque o endereço dizia isso. Perdi a manhã nesse detalhe.
+_PRONTA = """() => {
+  const t = document.body ? (document.body.innerText || '') : '';
+  if (/Acessar .rea de membros|Fazer login com Kiwify|Escolha uma conta/i
+        .test(t)) return false;
+  return !!document.querySelector('video')
+      || document.querySelectorAll('ol li a[href]').length > 1;
+}"""
 
 
 def _assentar(pagina, limite: float = PACIENCIA_ASSENTAR) -> bool:
@@ -299,10 +311,8 @@ def _assentar(pagina, limite: float = PACIENCIA_ASSENTAR) -> bool:
     fim = time.monotonic() + limite
     while time.monotonic() < fim:
         try:
-            endereco = (pagina.url or "").lower()
-            if not any(m in endereco for m in ("/login", "signin", "sign_in")):
-                if pagina.evaluate(_PRONTA):
-                    return True
+            if pagina.evaluate(_PRONTA):
+                return True
         except Exception:  # noqa: BLE001 — durante a troca a página some
             pass
         time.sleep(1.5)
@@ -356,105 +366,95 @@ def _escolher_conta(pagina) -> str:
         return ""
 
 
-def _esperar_entrar(pagina, segundos: float = 90.0) -> bool:
-    """Depois de escolher a conta, a aula volta — às vezes só após recarregar.
+def _tentar_reentrar(pagina, destino: str = "") -> bool:
+    """Volta a entrar no curso SEM nunca ver a senha.
 
-    A aba do repasse se fecha sozinha ao terminar, e a aba original nem sempre
-    percebe: por isso o recarregamento no meio do caminho.
-    """
-    metade = time.monotonic() + segundos / 2
-    fim = time.monotonic() + segundos
-    recarregou = False
-    while time.monotonic() < fim:
-        if _assentar(pagina, 5):
-            return True
-        if not recarregou and time.monotonic() > metade:
-            recarregou = True
-            try:
-                pagina.reload(wait_until="domcontentloaded", timeout=60000)
-            except Exception:  # noqa: BLE001
-                pass
-    return False
+    Pedido do Samuel, e foi ele quem viu como: "e so um tab e um enter". A
+    tela do repasse nao pede senha — pede para ESCOLHER A CONTA, com o e-mail
+    dele ja listado. Escolher e um clique. O segredo nao passa por aqui.
 
+    O CAMINHO CERTO, medido a duras penas:
 
-def _tentar_reentrar(pagina) -> bool:
-    """Tenta voltar a entrar no curso SEM nunca ver a senha.
-
-    Pedido do Samuel: "se ele deslogar de madrugada, e a minha senha já está
-    salva, ele pode entrar?". Pode, e a razão de eu aceitar é que o segredo
-    não passa por aqui em momento nenhum:
-
-    - a tela de entrada do curso NÃO tem campo de senha; tem um botão que
-      repassa para a conta Kiwify (verificado). Na maioria das vezes a conta
-      ainda está válida e o clique resolve sozinho, sem senha nenhuma.
-    - se aparecer um formulário, eu só APERTO O BOTÃO quando o próprio
-      navegador já preencheu os campos com o que está guardado no perfil dele.
-      Eu não digito, não leio e não guardo credencial — só olho se o campo
-      está vazio ou não. Campo vazio: eu paro e chamo o Samuel.
-
-    O preenchimento é do Chromium, que só oferece a senha no MESMO endereço em
-    que ela foi salva. Essa é a trava que impede um erro de navegação meu de
-    levar a credencial para o lugar errado — e ela não é minha, é do navegador.
+    - Ir direto ao endereco do repasse NAO resolve: a tela abre, o botao da
+      conta aceita o clique e nada acontece. Falta o contexto de origem, que
+      so existe quando se chega pela pagina do curso.
+    - O clique em "Fazer login com Kiwify" abre uma JANELA nova, e ela precisa
+      ser capturada com `expect_popup`. Sem isso eu ficava um minuto esperando
+      uma aba que, para mim, nunca existia.
+    - O clique na conta tem que ser do Playwright (evento confiavel), nao um
+      `.click()` de DOM.
+    - E no fim a aula volta na pagina principal COM O ENDERECO AINDA EM
+      /login. Quem julga isso e `_PRONTA`, pelo conteudo.
     """
     from . import navegador
 
-    contexto = navegador._estado.get("contexto")
-    antes = set(contexto.pages) if contexto else set()
+    destino = destino or pagina.url
 
-    # Talvez a escolha de conta já esteja na tela — não custa tentar antes.
-    quem = _escolher_conta(pagina)
-    if quem:
-        _anotar(f"escolhi a conta {quem} (um clique, sem senha)")
-        if _esperar_entrar(pagina):
-            return True
+    try:
+        with navegador._trava:
+            pagina = navegador._ir_para(destino)
+    except Exception as e:  # noqa: BLE001
+        _anotar(f"nao cheguei a pagina do curso: {str(e)[:70]}")
+        return False
+    time.sleep(6)
 
-    for seletor in ("button:has-text('Fazer login com Kiwify')",
-                    "a:has-text('Fazer login com Kiwify')",
-                    "button:has-text('Entrar')"):
-        try:
-            pagina.click(seletor, timeout=5000)
-            _anotar("cliquei em entrar de novo (sem senha)")
-            break
-        except Exception:  # noqa: BLE001
-            continue
-    else:
+    janela = None
+    try:
+        with pagina.expect_popup(timeout=25000) as info:
+            pagina.click("button:has-text('Fazer login com Kiwify')",
+                         timeout=10000)
+        janela = info.value
+        janela.wait_for_load_state("domcontentloaded")
+    except Exception as e:  # noqa: BLE001
+        _anotar(f"o repasse nao abriu: {str(e)[:70]}")
         return False
 
-    # O repasse abre OUTRA ABA (dashboard.kiwify.com/sso). Sem segui-la, eu
-    # ficava olhando a página velha e concluía "formulário vazio" sobre uma
-    # tela que nem tinha formulário. Verificado na Kiwify real.
-    formulario = pagina
-    for _ in range(10):
-        time.sleep(3)
-        if _assentar(pagina, 3):
-            _anotar("voltei a entrar sozinho, sem senha nenhuma")
-            return True
-        novas = [p for p in (contexto.pages if contexto else []) if p not in antes]
-        if novas:
-            formulario = novas[-1]
-            break
-
-    # A tela do repasse: escolher a conta resolve, e é só um clique.
-    for _ in range(3):
-        quem = _escolher_conta(formulario)
-        if not quem:
-            break
-        _anotar(f"escolhi a conta {quem} (um clique, sem senha)")
-        if _esperar_entrar(pagina):
-            return True
-        time.sleep(4)
-
-    # Sobrou um formulário DE VERDADE. Só sigo se o NAVEGADOR já o preencheu.
+    time.sleep(5)
+    escolheu = False
     try:
-        cheio = formulario.evaluate("""() => {
+        janela.locator("button").filter(has_text="@").first.click(timeout=10000)
+        escolheu = True
+        _anotar("escolhi a conta ja listada — um clique, sem senha")
+    except Exception:  # noqa: BLE001
+        pass
+
+    if not escolheu and not _entrar_por_formulario(janela, destino):
+        _fechar(janela)
+        return False
+
+    voltou = _assentar(pagina, PACIENCIA_ASSENTAR)
+    _fechar(janela)
+    if voltou:
+        _anotar("entrei de novo sozinho")
+    return voltou
+
+
+def _fechar(janela) -> None:
+    """Aba do repasse fechada na mao: senao o Brave a restaura na proxima vez."""
+    try:
+        if janela is not None and not janela.is_closed():
+            janela.close()
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _entrar_por_formulario(pagina, destino: str) -> bool:
+    """Último caso: formulário de verdade. Só aperto o botão se JÁ vier cheio.
+
+    Aqui a regra da senha volta a valer inteira — eu olho se o campo está
+    vazio ou não, nunca o conteúdo, e quem preenche é o Chromium, do perfil
+    dele, e só no endereço em que a senha foi salva.
+    """
+    try:
+        cheio = pagina.evaluate("""() => {
             const s = document.querySelector('input[type=password]');
             const u = document.querySelector(
                 'input[type=email], input[type=text]');
             return !!s && (s.value || '').length > 0
                        && !!u && (u.value || '').length > 0;
         }""")
-    except Exception:  # noqa: BLE001 — a aba do repasse fecha sozinha quando
-        cheio = False   # a conta também está deslogada
+    except Exception:  # noqa: BLE001
+        cheio = False
     if not cheio:
         _anotar("o formulário veio vazio — não invento senha, paro aqui")
         return False
@@ -463,15 +463,12 @@ def _tentar_reentrar(pagina) -> bool:
     for seletor in ("button[type=submit]", "button:has-text('Entrar')",
                     "button:has-text('Acessar')"):
         try:
-            formulario.click(seletor, timeout=5000)
+            pagina.click(seletor, timeout=5000)
             break
         except Exception:  # noqa: BLE001
             continue
-    for _ in range(10):
-        time.sleep(3)
-        if _assentar(pagina, 3):
-            return True
-    return False
+    time.sleep(10)
+    return True
 
 
 TENTATIVAS_POR_PAGINA = 4
@@ -519,7 +516,7 @@ def _abrir_curso(pagina, url: str, tentativas: int = TENTATIVAS_POR_PAGINA,
         # tentativa só para começar a agir é tempo parado sem ninguém para
         # destravar. `_tela_de_login` acima já garante que é login mesmo.
         _anotar(f"a Kiwify pediu login na tentativa {n}")
-        if _tentar_reentrar(pagina):
+        if _tentar_reentrar(pagina, url):
             return pagina, True
         time.sleep(5)
 
@@ -543,15 +540,21 @@ def _tela_de_login(pagina) -> bool:
     Pelo endereço OU pelo texto: a Kiwify às vezes mantém o endereço da aula e
     troca só o conteúdo pela tela de entrada.
     """
+    # Conteúdo primeiro, endereço só como último recurso: depois do repasse a
+    # aula aparece com o endereço ainda em `/login`, e confiar no endereço
+    # fazia eu tratar aula tocando como parede de entrada.
     try:
-        endereco = (pagina.url or "").lower()
-        if any(m in endereco for m in ("/login", "signin", "sign_in")):
-            return True
         return bool(pagina.evaluate(
-            "() => /Acessar .rea de membros|Fazer login com Kiwify/i.test("
+            "() => /Acessar .rea de membros|Fazer login com Kiwify|"
+            "Escolha uma conta/i.test("
             "document.body ? (document.body.innerText || '') : '')"))
     except Exception:  # noqa: BLE001
+        pass
+    try:
+        endereco = (pagina.url or "").lower()
+    except Exception:  # noqa: BLE001
         return False
+    return any(m in endereco for m in ("/login", "signin", "sign_in"))
 
 
 def _quadro_do_video(pagina, limite: float = ESPERA_PLAYER):
@@ -853,6 +856,46 @@ def _reabrir(pagina, url: str):
         return pagina
 
 
+INTERVALO_CUTUCADA = (600, 1200)   # 10 a 20 minutos, sorteado
+
+
+def _cutucar_o_windows(parar) -> None:
+    """Sinal de vida para o Windows, de dez em dez ou vinte em vinte minutos.
+
+    `SetThreadExecutionState` ja segura a suspensao, mas ele e uma DECLARACAO
+    ("estou ocupado"), nao atividade: politica de grupo, protetor de tela com
+    senha e o bloqueio automatico de algumas maquinas contam INATIVIDADE de
+    entrada, e para esses o pedido nao vale. Dez horas sem teclado nem mouse
+    e tempo de sobra para um deles apagar a tela.
+
+    O QUE ELE NAO FAZ: nada de pausar/despausar o video, que era a ideia
+    inicial. Pausar corta a gravacao no meio e deixa buraco na aula. E nada
+    de tecla comum, que digitaria dentro da pagina. Sobram dois gestos
+    inofensivos: mover o ponteiro um pixel e devolver, e apertar F15 — uma
+    tecla que teclado nenhum tem, inventada justamente para isto.
+    """
+    import ctypes
+    import ctypes.wintypes
+    import random
+
+    if os.name != "nt":
+        return
+    usuario = ctypes.windll.user32
+    F15, SOLTAR = 0x7E, 0x0002
+    while not parar.wait(random.randint(*INTERVALO_CUTUCADA)):
+        try:
+            ponto = ctypes.wintypes.POINT()
+            if usuario.GetCursorPos(ctypes.byref(ponto)):
+                usuario.SetCursorPos(ponto.x + 1, ponto.y)
+                time.sleep(0.05)
+                usuario.SetCursorPos(ponto.x, ponto.y)
+            usuario.keybd_event(F15, 0, 0, 0)
+            usuario.keybd_event(F15, 0, SOLTAR, 0)
+            _anotar("cutucada: sinal de vida para o Windows")
+        except Exception as e:  # noqa: BLE001 — nao pode derrubar a maratona
+            _anotar(f"cutucada falhou: {str(e)[:60]}")
+
+
 def _falar(texto: str) -> None:
     """Aviso por voz entre as aulas — NUNCA durante a gravação.
 
@@ -882,6 +925,9 @@ def trabalhar(url: str) -> None:
               segundos=0, duracao=0, travadas=[])
     _anotar(f"=== maratona: {url[:80]}")
     _impedir_dormir(True)
+    fim_da_cutucada = threading.Event()
+    threading.Thread(target=_cutucar_o_windows, args=(fim_da_cutucada,),
+                     name="cutucada", daemon=True).start()
 
     gravadas = 0
     try:
@@ -987,6 +1033,7 @@ def trabalhar(url: str) -> None:
     finally:
         if _aula.gravando():
             _anotar(_aula.parar()[:160])
+        fim_da_cutucada.set()
         _impedir_dormir(False)
         try:
             PEDIDO_DE_PARAR.unlink()
