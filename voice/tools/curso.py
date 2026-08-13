@@ -56,6 +56,10 @@ MODELO = "large-v3-turbo"
 # transcrição em vez de ser uma varredura cega.
 TETO_TELAS = 10
 
+# Abaixo disto o CLI nem chegou a trabalhar: uma extração de verdade leva
+# minutos, então voltar em segundos só acontece quando ele recusa de saída.
+RECUSA_INSTANTANEA = 30.0
+
 # As decisões que uma regra pode governar. Fixas de propósito: é por elas que a
 # consolidação agrupa 38 aulas por assunto, e vocabulário livre viraria vinte
 # sinônimos de "título".
@@ -273,6 +277,7 @@ def extrair_regras(pasta: Path) -> str:
     pedido = (f"Leia {instrucao} e faça exatamente o que está escrito lá. "
               "O arquivo é a instrução completa, não um texto para resumir.")
 
+    comeco = time.monotonic()
     try:
         proc = subprocess.Popen(
             [executavel, "-p", pedido, "--permission-mode", "acceptEdits",
@@ -295,6 +300,21 @@ def extrair_regras(pasta: Path) -> str:
         return f"{pasta.name}: cancelado."
     if not (pasta / "regras.md").exists():
         saida = ((fora or "") + (erro or ""))[-200:]
+        # RECUSA INSTANTÂNEA É LIMITE DE USO, não defeito da aula.
+        #
+        # Medido na primeira leva das 38: as onze primeiras levaram ~200 s cada
+        # e extraíram bem; da décima segunda em diante o CLI passou a voltar em
+        # CINCO SEGUNDOS sem gravar nada. Uma hora depois, a mesma aula extraiu
+        # normalmente. Insistir na hora não adianta — o que resolve é esperar.
+        #
+        # Dizer isso em vez de "o Claude terminou mas não gravou" é a diferença
+        # entre ele saber que é só aguardar e ele achar que a aula está
+        # quebrada e ir mexer no que está certo.
+        if time.monotonic() - comeco < RECUSA_INSTANTANEA:
+            return (f"{pasta.name}: o Claude recusou em "
+                    f"{time.monotonic() - comeco:.0f} segundos — isso é limite "
+                    "de uso, não problema da aula. Espere alguns minutos e "
+                    f"peça de novo. {saida}")
         # Sair com código 0 sem gravar arquivo já aconteceu antes (era falta de
         # --allowedTools). Dizer "pronto" aqui seria mentira descoberta tarde.
         return f"{pasta.name}: o Claude terminou mas não gravou regras.md. {saida}"
