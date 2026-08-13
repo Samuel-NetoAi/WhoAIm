@@ -787,8 +787,17 @@ def handle(text: str, ui) -> str | None:
     if _disse(low, "consolidar", "consolida", "juntar", "junta") and             _disse(low, "regras"):
         from . import curso as _curso
 
+        # Sem crédito, o plano B ainda entrega a ORDEM — que é o que
+        # desbloqueia a aprovação hoje em vez de esperar o mês virar.
+        if _disse(low, "sem ia", "sem credito", "sem crédito", "local",
+                  "mecanico", "mecânico", "de graca", "de graça"):
+            return _curso.consolidar_local()
         ui.write_log("SYS: consolidando as regras das aulas...")
-        return _curso.consolidar()
+        resposta = _curso.consolidar()
+        if "spend limit" in resposta or "limite" in resposta.lower():
+            return (resposta[:150] + " Vou agrupar sem IA para você já poder "
+                    "aprovar: " + _curso.consolidar_local())
+        return resposta
 
     if _disse(low, "regras"):
         from . import curso as _curso

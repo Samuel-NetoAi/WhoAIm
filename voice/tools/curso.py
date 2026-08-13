@@ -541,6 +541,116 @@ def consolidar(curso: str | None = None) -> str:
             "Diga 'revisar regras' para aprovar.")
 
 
+# Quão parecidos dois títulos precisam ser para virarem um só.
+#
+# ESCOLHIDO POR MEDIÇÃO, não por gosto. Sobre as 748 regras reais:
+#   0,86 -> 743   0,75 -> 736   0,65 -> 717   0,55 -> 677   0,45 -> 472
+# Em 0,65 todas as fusões que conferi estavam certas ("Não fuja do nicho, nem
+# pontualmente" com "...nem mesmo em um vídeo isolado"). O tombo em 0,45
+# denuncia fusão indevida.
+#
+# E o número conta a verdade incômoda: mesmo no melhor caso isto funde ~4%.
+# A duplicação de verdade é de IDEIA — "título curto converte mais" e "não
+# passe de 60 caracteres" são a mesma coisa dita de dois jeitos, e nenhuma
+# comparação de string vê isso. Quem funde de verdade é a passada com IA; o
+# valor deste plano B é o AGRUPAMENTO POR DECISÃO, que já deixa ele descartar
+# 307 regras de "canal" num comando só.
+PARECIDAS = 0.65
+
+
+def _titulo_da_regra(bloco: str) -> str:
+    return bloco.splitlines()[0].lstrip("# ").strip()
+
+
+def _decisao_da_regra(bloco: str) -> str:
+    achado = re.search(r"\*\*Decis[aã]o:\*\*\s*(\S+)", bloco)
+    return achado.group(1).strip("`*").lower() if achado else "canal"
+
+
+def _fontes_da_regra(bloco: str) -> str:
+    achado = re.search(r"\*\*Fonte:\*\*\s*(.+)", bloco)
+    return achado.group(1).strip() if achado else ""
+
+
+def consolidar_local(curso: str | None = None) -> str:
+    """Agrupa sem gastar crédito nenhum — o plano B, e ele é honesto sobre o
+    que não faz.
+
+    Nasceu de uma parede real: a consolidação por IA morreu no limite mensal
+    de gastos da conta, com as 748 regras já extraídas e paradas. Ficar
+    esperando o mês virar seria desperdiçar tudo o que já foi pago.
+
+    O QUE ELE FAZ: agrupa por decisão e funde o que tem título quase igual,
+    guardando TODAS as fontes.
+
+    O QUE ELE NÃO FAZ, e é por isso que a versão com IA continua valendo:
+    não entende que "título curto converte mais" e "não passe de 60
+    caracteres" são a mesma ideia dita de dois jeitos, e NÃO ACHA
+    CONTRADIÇÃO. Por isso a seção de conflitos aqui não existe em vez de vir
+    vazia fingindo que está tudo coerente.
+    """
+    from difflib import SequenceMatcher
+
+    curso = curso or _aula.curso_atual()
+    arquivos = sorted(_pasta_do_curso(curso).glob("aulas/*/regras.md"))
+    if not arquivos:
+        return "Não há regras extraídas ainda."
+
+    grupos: dict[str, list[dict]] = {}
+    total = 0
+    for arq in arquivos:
+        for bloco in _blocos_de_regras(arq.read_text(encoding="utf-8")):
+            total += 1
+            decisao = _decisao_da_regra(bloco)
+            titulo = _titulo_da_regra(bloco)
+            fila = grupos.setdefault(decisao, [])
+            for item in fila:
+                if SequenceMatcher(None, item["titulo"].lower(),
+                                   titulo.lower()).ratio() >= PARECIDAS:
+                    item["fontes"].append(_fontes_da_regra(bloco))
+                    break
+            else:
+                fila.append({"titulo": titulo, "bloco": bloco,
+                             "fontes": [_fontes_da_regra(bloco)]})
+
+    linhas = [f"# Regras do curso {curso} — agrupadas por decisão", "",
+              f"{total} regras extraídas de {len(arquivos)} aulas, fundidas em "
+              f"{sum(len(v) for v in grupos.values())} por semelhança de "
+              "título.", "",
+              "> **Agrupamento mecânico**, feito sem IA porque a conta bateu "
+              "no limite mensal de gastos. O que ele entrega é a ORDEM: por "
+              "decisão, e as mais repetidas primeiro. O que ele NÃO entrega: "
+              "quase não funde nada (só ~4%, porque compara texto e não "
+              "ideia), e **não acha contradição** entre aulas. Quando o limite "
+              "voltar, `consolidar regras` faz a versão que funde de verdade e "
+              "aponta o que as aulas dizem em sentidos opostos.", ""]
+    for decisao in DECISOES:
+        fila = grupos.get(decisao)
+        if not fila:
+            continue
+        # As que mais se repetem primeiro: regra dita em cinco aulas é o que o
+        # professor mais insistiu, e é por onde ele deve começar a aprovar.
+        fila.sort(key=lambda x: -len(x["fontes"]))
+        linhas += [f"# {decisao} ({len(fila)})", ""]
+        for item in fila:
+            corpo = [l for l in item["bloco"].splitlines()[1:]
+                     if not l.strip().startswith("- **Fonte:**")]
+            vezes = (f" · **repetida em {len(item['fontes'])} aulas**"
+                     if len(item["fontes"]) > 1 else "")
+            linhas.append(f"## {item['titulo']}{vezes}")
+            linhas += [l for l in corpo if l.strip()]
+            linhas.append(f"- **Fonte:** {'; '.join(item['fontes'])}")
+            linhas.append("")
+
+    alvo = _pasta_do_curso(curso) / CONSOLIDADAS
+    alvo.write_text("\n".join(linhas), encoding="utf-8")
+    juntadas = sum(len(v) for v in grupos.values())
+    return (f"Agrupei {total} regras em {juntadas}, por decisão, sem gastar "
+            f"crédito. Diga 'revisar regras' para aprovar. Quando o limite da "
+            "conta voltar, 'consolidar regras' faz a versão que também acha "
+            "contradições.")
+
+
 def propostas(curso: str | None = None) -> list[tuple[Path, str]]:
     """As regras à espera de aprovação.
 
