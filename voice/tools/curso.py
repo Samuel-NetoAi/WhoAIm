@@ -417,6 +417,8 @@ def cancelar() -> str:
 
 SKILL_WHOIAM = (Path.home() / ".claude" / "skills" / "whoiam" /
                 "references" / "algoritmo-youtube.md")
+# As regras de escolher ASSUNTO moram à parte — ver `DECISOES_DE_TEMA`.
+SKILL_TEMA = "algoritmo-youtube-tema.md"
 
 _pendente_de_aprovacao: dict = {"itens": [], "curso": ""}
 
@@ -759,9 +761,72 @@ def revisar(ui, curso: str | None = None, assunto: str = "") -> str:
             "Diga 'aprovar todas' ou os números que quiser.")
 
 
+# Quanto do "por quê" vai para a skill. O motivo completo importa para o
+# Samuel decidir se aprova; para o OMEGA citar, o que vale é a regra e a
+# fonte. Medido: os porquês inteiros somam 72 KB dos 188 do arquivo.
+TETO_PORQUE = 150
+
+
+def _enxugar(bloco: str) -> str:
+    """A versão da regra que a skill carrega.
+
+    O ARQUIVO COMPLETO NÃO PODE IR PARA A SKILL. São 403 regras aprovadas, e
+    inteiras dão 188 KB — que a `whoiam` leria a cada DOCUMENTO 5, engolindo
+    contexto que deveria estar sendo usado para pensar no vídeo. O que se
+    corta é o excesso de justificativa, nunca a PROCEDÊNCIA: a regra, a
+    decisão, a aula e o minuto ficam intactos, porque é deles que sai o
+    "o curso falou isso na aula 4, aos 12 minutos".
+
+    O completo continua em `regras-aprovadas.md`, que é a fonte auditável.
+    """
+    saida = []
+    for linha in bloco.splitlines():
+        if linha.startswith("- **Por quê:**"):
+            motivo = linha[len("- **Por quê:**"):].strip()
+            if len(motivo) > TETO_PORQUE:
+                motivo = motivo[:TETO_PORQUE].rsplit(" ", 1)[0] + "…"
+            saida.append(f"- **Por quê:** {motivo}")
+        elif linha.startswith("- **Fonte:**"):
+            # "20260812-1450-aula-8-seo-para-youtube-titulos… — [03:20]" vira
+            # "aula 8 seo para youtube — [03:20]": a data não ajuda a citar.
+            fontes = []
+            for f in linha[len("- **Fonte:**"):].split(";"):
+                f = f.strip()
+                f = re.sub(r"^\d{8}-\d{4}-", "", f)
+                nome, _, minuto = f.partition("—")
+                nome = nome.replace("-", " ").strip()[:38]
+                fontes.append(f"{nome} — {minuto.strip()}" if minuto else nome)
+            saida.append("- **Fonte:** " + "; ".join(fontes))
+        else:
+            saida.append(linha)
+    return "\n".join(saida)
+
+
+# O que é decisão de TEMA (que criatura, que ângulo) e não de SEO. Vai para um
+# arquivo separado porque serve noutro momento: a fase 0, quando ele escolhe o
+# assunto. Misturar os dois obrigaria a `whoiam` a carregar 60 KB de regra de
+# nicho para escrever um título — contexto gasto com o que não está em jogo.
+DECISOES_DE_TEMA = ("nicho", "tema")
+
+
 def _espelhar_na_skill(curso: str) -> str:
     """Copia as aprovadas para dentro da skill que gera o SEO do canal."""
-    conteudo = _texto_aprovado(curso)
+    aprovadas = _blocos_de_regras(_texto_aprovado(curso))
+    de_tema = [b for b in aprovadas if _decisao_da_regra(b) in DECISOES_DE_TEMA]
+    if de_tema:
+        try:
+            (SKILL_WHOIAM.parent / SKILL_TEMA).write_text(
+                "<!-- GERADO por voice/tools/curso.py. NÃO editar à mão. -->\n\n"
+                "# Escolher tema e nicho — regras aprovadas pelo Samuel\n\n"
+                "Use ao ESCOLHER o assunto do próximo vídeo (fase 0), não ao\n"
+                "escrever o SEO. Cada regra tem a aula e o minuto: cite a fonte.\n\n"
+                + "\n\n".join(_enxugar(b) for b in de_tema),
+                encoding="utf-8")
+        except Exception:  # noqa: BLE001
+            pass
+    conteudo = "\n\n".join(
+        _enxugar(b) for b in aprovadas
+        if _decisao_da_regra(b) not in DECISOES_DE_TEMA)
     if not conteudo.strip():
         return ""
     cabecalho = (
@@ -840,6 +905,26 @@ def decidir(pedido: str) -> str:
                 f"Descartei {len(alvo)}{de}. A fila ficou vazia.")
 
     curso = _pendente_de_aprovacao["curso"]
+
+    # CONFIANÇA BAIXA NÃO ENTRA POR ATACADO.
+    #
+    # A própria extração marca "baixa" quando o trecho estava confuso ou a
+    # transcrição truncada. Aprovar essas de enfiada é como o defeito entra:
+    # uma frase mal ouvida vira regra do canal, e depois o OMEGA a cita com a
+    # autoridade de "o curso disse". Por número ele ainda aprova quando quiser
+    # — o que se barra aqui é o gesto largo, não a decisão dele.
+    baixas = {i for i in alvo
+              if re.search(r"\*\*Confian[çc]a:\*\*\s*baixa", itens[i - 1][1], re.I)}
+    aviso = ""
+    if baixas and (todas or grupo):
+        alvo -= baixas
+        aviso = (f" Deixei {len(baixas)} de confiança BAIXA de fora — a "
+                 "extração marcou essas como duvidosas. Aprove por número se "
+                 "quiser alguma.")
+        if not alvo:
+            return ("Todas as escolhidas eram de confiança baixa; não aprovei "
+                    "nenhuma." + aviso)
+
     escolhidas = [itens[i - 1] for i in sorted(alvo)]
     arq = _pasta_do_curso(curso) / "regras-aprovadas.md"
     try:
@@ -860,7 +945,7 @@ def decidir(pedido: str) -> str:
              if sobrando else "")
     de = f" de {grupo}" if grupo else ""
     return (f"Aprovei {len(escolhidas)} regra(s){de}."
-            + _espelhar_na_skill(curso) + quais)
+            + _espelhar_na_skill(curso) + aviso + quais)
 
 
 # ---------- avaliar um título/descrição contra o que o curso ensinou ----------

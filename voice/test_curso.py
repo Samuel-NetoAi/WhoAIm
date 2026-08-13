@@ -121,11 +121,37 @@ class TestAprovacao(Base):
         self.assertIn("não republicar", texto, "falta a regra do material comprado")
         self.assertIn("cite a fonte", texto.lower())
 
+    def test_confianca_baixa_nao_entra_por_atacado(self):
+        """A extração marca "baixa" quando o trecho estava confuso.
+
+        Aprovar essas de enfiada é como o defeito entra: uma frase mal ouvida
+        vira regra do canal, e depois o OMEGA a cita com a autoridade de "o
+        curso disse". O gesto largo é que se barra — por número ele aprova.
+        """
+        ui = TelaFalsa()
+        curso.revisar(ui, "teste")
+        r = curso.decidir("aprovar todas")
+        self.assertIn("confiança BAIXA de fora", r)
+        self.assertNotIn("baixa", curso.SKILL_WHOIAM.read_text(encoding="utf-8"))
+
+    def test_por_numero_ele_ainda_manda(self):
+        """Barrar o atacado não é tirar a decisão dele."""
+        ui = TelaFalsa()
+        curso.revisar(ui, "teste")
+        itens = curso._pendente_de_aprovacao["itens"]
+        i = next(n for n, (_, b) in enumerate(itens, 1)
+                 if "baixa" in b.lower())
+        curso.decidir(f"aprovar {i}")
+        self.assertIn("baixa",
+                      curso.SKILL_WHOIAM.read_text(encoding="utf-8").lower())
+
     def test_nao_repete_o_que_ja_foi_aprovado(self):
         ui = TelaFalsa()
         curso.revisar(ui, "teste")
         curso.decidir("aprovar todas")
-        self.assertIn("Nada novo", curso.revisar(ui, "teste"))
+        sobrou = curso.revisar(ui, "teste")
+        # Sobra só a de confiança baixa, que o atacado deixou de fora.
+        self.assertNotIn("Use número", sobrou)
 
     def test_decidir_sem_revisar_antes(self):
         self.assertIn("revisar regras", curso.decidir("aprovar todas"))
