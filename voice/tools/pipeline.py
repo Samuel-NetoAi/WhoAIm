@@ -49,13 +49,23 @@ E_WINDOWS = platform.system() == "Windows"
 # estava errado sobre a cobrança real. Para saber se algo custa, gere e
 # compare `get_credits` antes e depois — não pergunte ao estimador.
 KAIROGEN_MODELO_IMAGEM = "z-image-turbo"
+
+# `download_image_from_url` NÃO entra aqui, de propósito. Testado em
+# 13/08/2026: ela grava 96 bytes de base64 de um PNG 1x1 — o placeholder
+# transparente — e ainda relata sucesso. A imagem real está intacta no CDN
+# (1024x1024, 1,3 MB) e baixa com um curl simples, sem autenticação. Então o
+# download sai pelo Bash, que já está liberado e que eu consigo conferir.
+# Sem esse teste, a fase 2 entregaria catorze painéis de 96 bytes.
 KAIROGEN_FERRAMENTAS = (
     "mcp__kairogen__generate_image",
     "mcp__kairogen__get_generation",
-    "mcp__kairogen__download_image_from_url",
     "mcp__kairogen__get_credits",
     "mcp__kairogen__estimate_cost",
 )
+
+# Abaixo disto o arquivo não é imagem — é mensagem de erro ou placeholder.
+# Uma geração de verdade do z-image-turbo deu 1,3 MB.
+KAIROGEN_MINIMO_BYTES = 10_000
 
 
 def _instrucao_render(pasta: Path) -> str:
@@ -71,11 +81,18 @@ def _instrucao_render(pasta: Path) -> str:
         f"ferramenta generate_image do kairogen, sempre com "
         f"model='{KAIROGEN_MODELO_IMAGEM}'. Não use outro modelo: esse é o "
         "único ilimitado do plano, e os demais gastam crédito. A geração é "
-        "assíncrona — guarde o generation_id, consulte get_generation até o "
-        "status ficar COMPLETED e só então baixe cada output_url com "
-        f"download_image_from_url para {pasta}, um arquivo por imagem, com "
-        "nome que case com a seção do documento. Se alguma falhar, siga para "
-        "as próximas e diga no fim quais não saíram."
+        "assíncrona — guarde o generation_id e consulte get_generation até o "
+        "status ficar COMPLETED, de onde sai a output_url. "
+        f"BAIXE cada imagem com o Bash, assim: curl -sS -L -o {pasta}/NOME.png "
+        "\"URL\" — um arquivo por imagem, com nome que case com a seção do "
+        "documento. NÃO use download_image_from_url: essa ferramenta grava um "
+        "placeholder de 96 bytes e mente que deu certo. "
+        f"CONFIRA cada arquivo baixado com `wc -c ARQUIVO` — use wc, NÃO use "
+        "ls -la: no Windows o ls mostra o número do grupo numa coluna parecida "
+        "com a do tamanho, e já houve relato de 197121 bytes lendo a coluna "
+        f"errada. Se o wc der menos de {KAIROGEN_MINIMO_BYTES} bytes, não é "
+        "imagem — tente de novo e, se insistir, diga no fim exatamente quais "
+        "não saíram. Nunca relate sucesso sem ter conferido com o wc."
     )
 
 

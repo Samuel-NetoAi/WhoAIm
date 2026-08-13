@@ -296,8 +296,22 @@ class TestKairogenSoImagem(unittest.TestCase):
         texto = _instrucao_render(Path("/tmp/x"))
         self.assertIn("COMPLETED", texto)
         self.assertIn("get_generation", texto)
-        self.assertIn("download_image_from_url", texto)
         self.assertIn("z-image-turbo", texto)
+
+    def test_baixa_com_curl_e_confere_o_tamanho(self):
+        """A ferramenta de download do MCP grava 96 bytes de um PNG 1x1 e
+        diz que deu certo. Medido: a imagem real tem 1,3 MB e vem por curl.
+        Sem a conferência de tamanho, a fase 2 entrega catorze placeholders."""
+        from pathlib import Path
+
+        from tools.pipeline import KAIROGEN_FERRAMENTAS, _instrucao_render
+
+        texto = _instrucao_render(Path("/tmp/x"))
+        self.assertIn("curl", texto)
+        self.assertIn("10000", texto.replace("_", "").replace(".", ""))
+        self.assertNotIn("mcp__kairogen__download_image_from_url",
+                         KAIROGEN_FERRAMENTAS,
+                         "essa ferramenta grava placeholder e mente")
 
     def test_a_instrucao_proibe_trocar_de_modelo(self):
         from pathlib import Path
