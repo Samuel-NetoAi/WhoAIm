@@ -566,8 +566,18 @@ TETO_NA_TELA = 60
 def _norm_decisao(texto: str) -> str:
     """"título" falado, "titulo" digitado, "TÍTULOS" — tudo vira a etiqueta."""
     limpo = _aula._sem_acento((texto or "").strip().lower())
+    # SEM ISTO, "sem assunto" virava "titulo": string vazia é substring de
+    # tudo, então o primeiro item de DECISOES ganhava sempre. O sintoma seria
+    # cruel — "revisar regras" abriria só as de título e ele nunca veria as
+    # outras 673, sem nenhum aviso de que estava filtrando.
+    if not limpo:
+        return ""
     for d in DECISOES:
-        if d in limpo or limpo in d:
+        if d in limpo:
+            return d
+        # A outra direção só para abreviação digitada ("titul", "thumb"), e
+        # com tamanho mínimo, senão qualquer letra solta casaria.
+        if len(limpo) >= 4 and limpo in d:
             return d
     if "titulos" in limpo:
         return "titulo"
