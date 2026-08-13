@@ -262,5 +262,51 @@ class TestPipelineAceitaAsFases(unittest.TestCase):
         self.assertIn("Não conheço a fase", r)
 
 
+class TestKairogenSoImagem(unittest.TestCase):
+    """A decisão do Samuel foi: imagem sim, vídeo não — ele produz o vídeo.
+
+    O motivo é dinheiro, não gosto: a cadência que ele quer não cabe no
+    orçamento de vídeo do plano. Uma decisão dessas não pode viver só em
+    comentário, porque a próxima pessoa que "melhorar" o allowlist reabre o
+    gasto sem perceber. Aqui ela vira falha de teste.
+    """
+
+    def test_video_nao_esta_liberado(self):
+        from tools.pipeline import KAIROGEN_FERRAMENTAS
+
+        for f in KAIROGEN_FERRAMENTAS:
+            self.assertNotIn("video", f,
+                             f"{f} reabre a geração de vídeo, que o Samuel "
+                             "tirou de escopo por causa de custo")
+
+    def test_o_modelo_padrao_e_o_ilimitado(self):
+        """Medido, não suposto: z-image-turbo saiu COMPLETED com
+        cost_credits 0 e o saldo parado em 1780. Qualquer outro cobra."""
+        from tools.pipeline import KAIROGEN_MODELO_IMAGEM
+
+        self.assertEqual(KAIROGEN_MODELO_IMAGEM, "z-image-turbo")
+
+    def test_a_instrucao_manda_esperar_o_COMPLETED(self):
+        """`generate_image` devolve QUEUED e mais nada. Sem a espera, a fase
+        termina 'com sucesso' e a pasta fica vazia — a falha que engana."""
+        from pathlib import Path
+
+        from tools.pipeline import _instrucao_render
+
+        texto = _instrucao_render(Path("/tmp/x"))
+        self.assertIn("COMPLETED", texto)
+        self.assertIn("get_generation", texto)
+        self.assertIn("download_image_from_url", texto)
+        self.assertIn("z-image-turbo", texto)
+
+    def test_a_instrucao_proibe_trocar_de_modelo(self):
+        from pathlib import Path
+
+        from tools.pipeline import _instrucao_render
+
+        texto = _instrucao_render(Path("/tmp/x")).lower()
+        self.assertIn("não use outro modelo", texto)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

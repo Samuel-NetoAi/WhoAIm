@@ -27,6 +27,58 @@ AI_PROJECT_ROOT = Path(os.environ.get("AI_PROJECT_ROOT") or r"C:\Ai-Project")
 
 E_WINDOWS = platform.system() == "Windows"
 
+# ── Kairogen: geração de imagem nas fases 1 e 2 ───────────────────────────
+#
+# O ESCOPO ESTÁ TRAVADO NA LISTA, NÃO NA INTENÇÃO. O Samuel decidiu que o
+# Kairogen entra só como gerador de IMAGEM; o vídeo ele produz à parte,
+# porque a cadência que ele quer para o canal não cabe no orçamento de
+# vídeo hoje. Por isso os nomes vão UM A UM e `generate_video` NÃO está
+# entre eles. Em modo headless o CLI recusa toda ferramenta fora do
+# --allowedTools, então a decisão fica garantida pelo código — não depende
+# de o modelo se lembrar dela no meio de catorze blocos.
+#
+# O MODELO É FIXO POR CAUSA DE DINHEIRO. Medido em 13/08/2026 no plano
+# PRECISION, com geração real e não com tabela de preço: `z-image-turbo`
+# devolve `cost_credits: 0` e o saldo não se move (1780 -> 1780, status
+# COMPLETED). Os outros vinte modelos de imagem custam de 1 a 13 créditos
+# cada. Model sheet se acerta na tentativa, não na primeira — então o padrão
+# tem que ser o ilimitado, ou uma noite de iteração come a reserva do mês.
+#
+# CUIDADO AO MEXER: `estimate_cost` devolve o preço de TABELA do modelo, que
+# ignora a isenção do plano. Ele disse "1 crédito" para o z-image-turbo e
+# estava errado sobre a cobrança real. Para saber se algo custa, gere e
+# compare `get_credits` antes e depois — não pergunte ao estimador.
+KAIROGEN_MODELO_IMAGEM = "z-image-turbo"
+KAIROGEN_FERRAMENTAS = (
+    "mcp__kairogen__generate_image",
+    "mcp__kairogen__get_generation",
+    "mcp__kairogen__download_image_from_url",
+    "mcp__kairogen__get_credits",
+    "mcp__kairogen__estimate_cost",
+)
+
+
+def _instrucao_render(pasta: Path) -> str:
+    """O trecho que manda renderizar de verdade, e não só descrever.
+
+    `generate_image` é ASSÍNCRONO: devolve `QUEUED` com um id e nada mais. Sem
+    a instrução de consultar `get_generation` até `COMPLETED`, a fase termina
+    "com sucesso" e o disco fica vazio — a falha mais cara possível, porque
+    parece que deu certo.
+    """
+    return (
+        " Depois de salvar o arquivo, GERE as imagens de verdade com a "
+        f"ferramenta generate_image do kairogen, sempre com "
+        f"model='{KAIROGEN_MODELO_IMAGEM}'. Não use outro modelo: esse é o "
+        "único ilimitado do plano, e os demais gastam crédito. A geração é "
+        "assíncrona — guarde o generation_id, consulte get_generation até o "
+        "status ficar COMPLETED e só então baixe cada output_url com "
+        f"download_image_from_url para {pasta}, um arquivo por imagem, com "
+        "nome que case com a seção do documento. Se alguma falhar, siga para "
+        "as próximas e diga no fim quais não saíram."
+    )
+
+
 # Onde procurar o CLI, do mais provável ao menos. No Windows o npm instala um
 # .CMD que só o PATH resolve; no Linux/macOS o instalador global costuma cair
 # em ~/.local/bin.
@@ -216,6 +268,7 @@ def _run_claude(creature: str, phase: str) -> None:
             f"personagem recorrente. NÃO gere storyboards nem prompts Seedance "
             f"agora. Salve o roteiro em {notes / 'roteiro.md'} e os model sheets "
             f"em {notes / 'model-sheets.md'}."
+            + _instrucao_render(notes / "model-sheets")
         ),
         "storyboards": (
             f"Use a skill whoiam para {creature}. O roteiro já aprovado está em "
@@ -224,6 +277,9 @@ def _run_claude(creature: str, phase: str) -> None:
             f"de consistência visual, não invente aparência nova. Gere agora o "
             f"Documento 2 (storyboards) e o Documento 3 (prompts Seedance) e "
             f"salve tudo em {notes / 'prompts.md'}."
+            # Os prompts Seedance continuam sendo TEXTO: o vídeo é do Samuel.
+            # O que se renderiza aqui são os painéis do storyboard.
+            + _instrucao_render(notes / "storyboards")
         ),
         # Atalho "gera tudo de uma vez", para quando ele confiar no personagem.
         "producao": (
@@ -267,6 +323,8 @@ def _run_claude(creature: str, phase: str) -> None:
                 "Bash",
                 "Glob",
                 "Grep",
+                # Imagem, e só imagem — ver KAIROGEN_FERRAMENTAS.
+                *KAIROGEN_FERRAMENTAS,
             ],
             cwd=str(AI_PROJECT_ROOT),
             stdout=subprocess.PIPE,
