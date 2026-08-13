@@ -166,5 +166,83 @@ class TestFila(Base):
         self.assertEqual(curso.pendentes("teste"), [])
 
 
+
+
+class TestAprovarPorDecisao(unittest.TestCase):
+    """São 38 aulas e mais de quinhentas regras.
+
+    Aprovar de uma em uma, por número, é trabalho que ninguém termina — e
+    trabalho que não se termina vira regra nenhuma valendo, ou seja, o curso
+    inteiro desperdiçado. Por isso "aprovar tudo de título".
+    """
+
+    def setUp(self):
+        import tempfile
+
+        from tools import aula as _aula
+
+        self.tmp = tempfile.TemporaryDirectory()
+        raiz = Path(self.tmp.name)
+        self._cursos, self._skill = _aula.CURSOS, curso.SKILL_WHOIAM
+        # A SKILL REAL FICA FORA DISTO. Um teste meu já gravou regras
+        # inventadas em ~/.claude/skills/whoiam/references/algoritmo-youtube.md,
+        # e a `whoiam` teria passado a gerar SEO com base em regra que nunca
+        # existiu — mentira com cara de curso, que é o pior desfecho possível.
+        _aula.CURSOS = raiz / "Cursos"
+        curso.SKILL_WHOIAM = raiz / "skill" / "algoritmo-youtube.md"
+        (_aula.CURSOS / _aula.curso_atual()).mkdir(parents=True)
+
+        def regra(titulo, decisao):
+            return (f"## {titulo}\n- **Decisão:** {decisao}\n"
+                    "- **Fonte:** aula 1 — [01:00]\n- **Confiança:** alta")
+
+        self.itens = [(None, regra("Título com número", "titulo")),
+                      (None, regra("Título curto", "titulo")),
+                      (None, regra("Thumb com rosto", "thumbnail")),
+                      (None, regra("Poste 19h", "quando-postar"))]
+        curso._pendente_de_aprovacao.update(
+            {"itens": list(self.itens), "curso": _aula.curso_atual()})
+
+    def tearDown(self):
+        import shutil
+
+        from tools import aula as _aula
+
+        _aula.CURSOS, curso.SKILL_WHOIAM = self._cursos, self._skill
+        curso._pendente_de_aprovacao.update({"itens": [], "curso": ""})
+        shutil.rmtree(self.tmp.name, ignore_errors=True)
+
+    def test_aprova_um_assunto_inteiro_de_uma_vez(self):
+        r = curso.decidir("aprovar tudo de título")
+        self.assertIn("2 regra(s) de titulo", r)
+        aprovadas = curso.SKILL_WHOIAM.read_text(encoding="utf-8")
+        self.assertIn("Título com número", aprovadas)
+        self.assertNotIn("Thumb com rosto", aprovadas,
+                         "aprovou regra de outro assunto")
+
+    def test_diz_o_que_sobrou_por_assunto(self):
+        """"restam 47" não ajuda ninguém; "thumbnail (12), tags (4)" ajuda."""
+        r = curso.decidir("aprovar tudo de título")
+        self.assertIn("thumbnail (1)", r)
+        self.assertIn("quando-postar (1)", r)
+
+    def test_assunto_que_nao_esta_na_fila_nao_apaga_nada(self):
+        r = curso.decidir("descartar tudo de canal")
+        self.assertIn("Nenhuma", r)
+        self.assertEqual(len(curso._pendente_de_aprovacao["itens"]), 4)
+
+    def test_descartar_um_assunto_nao_leva_os_outros(self):
+        curso.decidir("descartar tudo de título")
+        sobrou = curso._pendente_de_aprovacao["itens"]
+        self.assertEqual(len(sobrou), 2)
+        self.assertFalse(curso.SKILL_WHOIAM.exists(),
+                         "descartar não pode escrever na skill")
+
+    def test_numero_continua_valendo(self):
+        curso.decidir("aprovar 3")
+        self.assertIn("Thumb com rosto",
+                      curso.SKILL_WHOIAM.read_text(encoding="utf-8"))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

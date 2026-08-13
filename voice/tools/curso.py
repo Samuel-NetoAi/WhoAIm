@@ -620,23 +620,51 @@ def _espelhar_na_skill(curso: str) -> str:
         return f" (não consegui atualizar a skill: {str(e)[:50]})"
 
 
+def _decisoes_na_fila(itens) -> str:
+    """Quais assuntos estão esperando decisão, e quantas regras cada um tem."""
+    import collections
+
+    conta = collections.Counter()
+    for _, bloco in itens:
+        achado = re.search(r"\*\*Decis[aã]o:\*\*\s*(\S+)", bloco)
+        conta[achado.group(1).strip("`*") if achado else "sem etiqueta"] += 1
+    return ", ".join(f"{d} ({n})" for d, n in conta.most_common())
+
+
 def decidir(pedido: str) -> str:
     """`aprovar todas`, `aprovar 1 3`, `descartar 2` — sobre o que está na tela."""
     itens = _pendente_de_aprovacao.get("itens") or []
     if not itens:
         return "Não há regras esperando decisão. Diga 'revisar regras' antes."
 
-    baixo = pedido.lower()
-    descartar = baixo.startswith(("descart", "recus", "nao ", "não ", "joga"))
+    baixo = _aula._sem_acento(pedido.lower())
+    descartar = baixo.startswith(("descart", "recus", "nao ", "joga"))
     numeros = [int(n) for n in re.findall(r"\d+", baixo)
                if 1 <= int(n) <= len(itens)]
     todas = "todas" in baixo or "tudo" in baixo
 
-    if not numeros and not todas:
-        return ("Diga quais: 'aprovar todas', 'aprovar 1 3 5' ou 'descartar 2'.")
-
-    alvo = set(range(1, len(itens) + 1)) if todas else set(numeros)
-    if descartar and todas:
+    # POR DECISÃO, e não só por número.
+    #
+    # São 38 aulas e mais de quinhentas regras. Aprovar de uma em uma, por
+    # número, é trabalho que ninguém termina — e trabalho que não se termina
+    # vira regra nenhuma valendo, ou seja, o curso inteiro desperdiçado. Dizer
+    # "aprovar tudo de título" resolve um assunto de uma vez, e é assim que
+    # ele pensa: por decisão, não por índice.
+    grupo = next((d for d in DECISOES if d in baixo), "")
+    if not grupo and "titulos" in baixo:
+        grupo = "titulo"
+    if grupo:
+        alvo = {i for i, (_, b) in enumerate(itens, 1)
+                if f"**Decisão:** {grupo}" in b}
+        if not alvo:
+            return (f"Nenhuma das {len(itens)} regras na fila é de {grupo}. "
+                    f"As decisões em jogo: {_decisoes_na_fila(itens)}.")
+    elif not numeros and not todas:
+        return ("Diga quais: 'aprovar todas', 'aprovar tudo de título', "
+                "'aprovar 1 3 5' ou 'descartar 2'.")
+    else:
+        alvo = set(range(1, len(itens) + 1)) if todas else set(numeros)
+    if descartar and todas and not grupo:
         _pendente_de_aprovacao["itens"] = []
         return "Descartei todas. Nenhuma passou a valer."
     if descartar:
@@ -644,7 +672,10 @@ def decidir(pedido: str) -> str:
         # somem da fila. Nada é apagado do disco — a fonte continua auditável.
         restantes = [it for i, it in enumerate(itens, 1) if i not in alvo]
         _pendente_de_aprovacao["itens"] = restantes
-        return (f"Descartei {len(alvo)}. Sobraram {len(restantes)} para decidir.")
+        de = f" de {grupo}" if grupo else ""
+        return (f"Descartei {len(alvo)}{de}. Sobraram {len(restantes)}: "
+                f"{_decisoes_na_fila(restantes)}." if restantes else
+                f"Descartei {len(alvo)}{de}. A fila ficou vazia.")
 
     curso = _pendente_de_aprovacao["curso"]
     escolhidas = [itens[i - 1] for i in sorted(alvo)]
@@ -662,9 +693,12 @@ def decidir(pedido: str) -> str:
 
     _pendente_de_aprovacao["itens"] = [
         it for i, it in enumerate(itens, 1) if i not in alvo]
-    restam = len(_pendente_de_aprovacao["itens"])
-    return (f"Aprovei {len(escolhidas)} regra(s)." + _espelhar_na_skill(curso)
-            + (f" Ainda restam {restam} para decidir." if restam else ""))
+    sobrando = _pendente_de_aprovacao["itens"]
+    quais = (f" Ainda restam {len(sobrando)}: {_decisoes_na_fila(sobrando)}."
+             if sobrando else "")
+    de = f" de {grupo}" if grupo else ""
+    return (f"Aprovei {len(escolhidas)} regra(s){de}."
+            + _espelhar_na_skill(curso) + quais)
 
 
 # ---------- avaliar um título/descrição contra o que o curso ensinou ----------
