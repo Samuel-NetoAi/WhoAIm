@@ -173,7 +173,24 @@ def _fim_de_fase(creature: str, phase: str) -> str:
             material = _curso.orientar(("tema", "titulo", "thumbnail"),
                                        sobre=creature)
             if material:
-                recado += "\n\n" + material
+                # O MATERIAL VAI PARA ARQUIVO, NÃO PARA A VOZ.
+                #
+                # Esta frase inteira é entregue com `falar=True`. Anexar as
+                # regras aqui fazia o OMEGA começar a LER EM VOZ ALTA setenta
+                # e seis mil caracteres de regra, uma atrás da outra, sem ter
+                # como parar. Descoberto na primeira fase 0 de verdade.
+                #
+                # Em arquivo, ele cai na aba Notas do Studio — onde o Samuel
+                # já lê o dossiê — e continua servindo de contexto para quem
+                # for escrever o título.
+                arquivo = _project_dir(creature) / "notes" / "curso-fase-0.md"
+                try:
+                    arquivo.write_text(material, encoding="utf-8")
+                    recado += (f" Trouxe {material.count(chr(10) + '## ')} "
+                               "regras do curso sobre tema, título e thumbnail "
+                               "— estão em Notas, em curso-fase-0.")
+                except Exception:  # noqa: BLE001
+                    pass
         return recado
     except Exception:  # noqa: BLE001 — anotar não pode derrubar o pipeline
         return ""
@@ -329,15 +346,31 @@ def _run_claude(creature: str, phase: str) -> None:
         notificar(_current["result"], falar=True)
 
 
+# Quão parecidos dois nomes precisam ser para eu suspeitar que são o mesmo ser.
+#
+# "Cthulhu" e "Cthullhu" davam 0,93 e ainda assim passavam como criaturas
+# DIFERENTES, porque `mesma_criatura` compara por sinônimo e apelido, não por
+# grafia. O resultado seria um projeto novo do lado de 741 MB de imagens já
+# feitas — exatamente o caso "Pennywise/IT" que este guarda existe para pegar,
+# derrotado por uma letra dobrada. Nome de criatura é escrito errado o tempo
+# todo, por voz e por teclado.
+QUASE_O_MESMO_NOME = 0.85
+
+
 def _projeto_equivalente(creature: str) -> str | None:
     """Nome de um projeto já existente que seja o MESMO ser, ou None."""
+    from difflib import SequenceMatcher
+
     raiz = AI_PROJECT_ROOT / "Criaturas"
     if not raiz.exists():
         return None
+    alvo = _slugify(creature)
     for pasta in raiz.iterdir():
         if not pasta.is_dir():
             continue
-        if not mesma_criatura(creature, pasta.name):
+        parecido = SequenceMatcher(
+            None, alvo, _slugify(pasta.name)).ratio() >= QUASE_O_MESMO_NOME
+        if not mesma_criatura(creature, pasta.name) and not parecido:
             continue
         # Só conta se a pesquisa realmente existir lá.
         if (pasta / f"{_slugify(pasta.name)}-video" / "notes" / "dossie.md").exists():
