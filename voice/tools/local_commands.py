@@ -162,8 +162,12 @@ terminar uma, **ele mesmo anuncia a próxima** e o que ela precisa de você.
   DECISÃO (título, thumb, descrição, quando postar...), funde o que se repete
   guardando todas as fontes, e separa numa seção à parte o que as aulas
   **contradizem** — para você decidir, não eu
-- **`revisar regras`** — mostra as regras propostas com a aula e o minuto;
-  **`aprovar todas`** / **`aprovar 1 3`** / **`descartar 2`**
+- **`revisar regras`** — com a fila grande ele abre o MAPA: quantas regras de
+  cada assunto. Aí você escolhe: **`revisar título`**, **`revisar thumbnail`**,
+  **`revisar quando postar`**... e decide um assunto por vez
+- **`aprovar tudo de título`** / **`descartar tudo de canal`** — por assunto,
+  que é como você pensa. **`aprovar 1 3`** e **`aprovar todas`** continuam
+  valendo para a lista que está na tela
 - **`apagar a aula 2`** → depois **`confirmar`**. Serve para quando você teve
   que interromper no meio e vai regravar: sem apagar, ficam duas pastas do
   mesmo assunto e a extração de regras lê as duas como aulas diferentes.
@@ -802,7 +806,9 @@ def handle(text: str, ui) -> str | None:
     if _disse(low, "regras"):
         from . import curso as _curso
 
-        return _curso.revisar(ui)
+        # "revisar título" abre só as de título. Sem assunto e com fila
+        # grande, `revisar` devolve o mapa em vez do paredão.
+        return _curso.revisar(ui, assunto=raw)
 
     if low.startswith(("aprovar ", "aprova ", "descartar ", "descarta ",
                        "aprovar", "descartar")):

@@ -557,6 +557,22 @@ def consolidar(curso: str | None = None) -> str:
 # 307 regras de "canal" num comando só.
 PARECIDAS = 0.65
 
+# Acima disto, a tela vira paredão e ele para de ler. Escolhido pelo que cabe
+# numa leitura de uma sentada: os assuntos grandes (nicho 89, canal 307) vêm
+# por partes de propósito.
+TETO_NA_TELA = 60
+
+
+def _norm_decisao(texto: str) -> str:
+    """"título" falado, "titulo" digitado, "TÍTULOS" — tudo vira a etiqueta."""
+    limpo = _aula._sem_acento((texto or "").strip().lower())
+    for d in DECISOES:
+        if d in limpo or limpo in d:
+            return d
+    if "titulos" in limpo:
+        return "titulo"
+    return ""
+
 
 def _titulo_da_regra(bloco: str) -> str:
     return bloco.splitlines()[0].lstrip("# ").strip()
@@ -678,8 +694,15 @@ def _texto_aprovado(curso: str) -> str:
     return arq.read_text(encoding="utf-8") if arq.exists() else ""
 
 
-def revisar(ui, curso: str | None = None) -> str:
-    """Mostra as regras propostas, numeradas, para ele decidir."""
+def revisar(ui, curso: str | None = None, assunto: str = "") -> str:
+    """Mostra as regras propostas para ele decidir — UM ASSUNTO POR VEZ.
+
+    A primeira versão jogava a fila inteira na tela. Com 717 regras isso não é
+    revisar, é um paredão: ninguém lê, e o que ninguém lê ninguém aprova — ou
+    seja, o curso inteiro parado. Agora, quando a fila é grande, a primeira
+    tela é o MAPA (que assuntos existem e quantas regras cada um tem) e ele
+    escolhe por onde começar: "revisar título" traz as 44, não as 717.
+    """
     curso = curso or _aula.curso_atual()
     itens = propostas(curso)
     ja = _texto_aprovado(curso)
@@ -693,10 +716,29 @@ def revisar(ui, curso: str | None = None) -> str:
                 f"Nenhuma regra extraída ainda no curso {curso}. "
                 "Diga 'processar curso' depois de gravar uma aula.")
 
+    # Filtra por assunto quando ele pediu um.
+    alvo = _norm_decisao(assunto)
+    if alvo:
+        novas = [(p, b) for p, b in novas if _decisao_da_regra(b) == alvo]
+        if not novas:
+            return (f"Nenhuma regra de {alvo} esperando decisão. "
+                    f"Na fila: {_decisoes_na_fila(itens)}.")
+    elif len(novas) > TETO_NA_TELA:
+        # Fila grande e sem assunto escolhido: mostra o mapa, não o paredão.
+        _pendente_de_aprovacao.update({"itens": novas, "curso": curso})
+        mapa = _decisoes_na_fila(novas)
+        return (f"São {len(novas)} regras esperando — demais para uma tela só. "
+                f"Elas estão assim: {mapa}. Diga 'revisar título' (ou thumbnail, "
+                "descrição, tags, quando postar, retenção, CTR, nicho, tema, "
+                "canal) para ver um assunto por vez. Se quiser podar de cara, "
+                "'descartar tudo de canal' costuma ser o maior corte.")
+
     _pendente_de_aprovacao.update({"itens": novas, "curso": curso})
-    linhas = [f"# Regras do curso {curso} — aguardando você", "",
-              f"{len(novas)} proposta(s). Diga **`aprovar todas`**, "
-              "**`aprovar 1 3 5`** ou **`descartar 2`**.", ""]
+    titulo_tela = f" — {alvo}" if alvo else ""
+    linhas = [f"# Regras do curso {curso}{titulo_tela} — aguardando você", "",
+              f"{len(novas)} proposta(s). Diga **`aprovar todas`**"
+              + (f" (aprova as {len(novas)} de {alvo})" if alvo else "")
+              + ", **`aprovar 1 3 5`** ou **`descartar 2`**.", ""]
     for i, (pasta, bloco) in enumerate(novas, 1):
         cabeca, *resto = bloco.splitlines()
         linhas.append(f"### {i}. {cabeca[3:].strip()}")
