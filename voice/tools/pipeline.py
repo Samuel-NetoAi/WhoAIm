@@ -67,6 +67,27 @@ KAIROGEN_FERRAMENTAS = (
 # Uma geração de verdade do z-image-turbo deu 1,3 MB.
 KAIROGEN_MINIMO_BYTES = 10_000
 
+# Teto do plano PRECISION (get_me_context, 14/08/2026). Vale mandar em lote
+# até esse número: catorze painéis de storyboard saem em duas levas em vez
+# de catorze esperas em fila.
+KAIROGEN_IMAGENS_SIMULTANEAS = 8
+
+# OS SLOTS DE PERSONAGEM NÃO SERVEM (ainda). Pareciam a resposta para a
+# consistência entre a fase 1 e a fase 2 — "identidade fixa, reutilizável em
+# todas as gerações", dez slots no plano. Medido em 14/08/2026:
+#
+#   1. `characters_generate_images` com o modelo gratuito devolve
+#      GENERATION_QUOTE_MISMATCH nos modos síncrono E assíncrono. A própria
+#      mensagem diz "o custo mudou para 0 créditos" — a ferramenta cota 3, o
+#      backend recota 0, e ela não atualiza a própria cotação. Trava deles.
+#   2. Sem o override, ela cai no `nano-banana-2`: 11 créditos por leva de 4
+#      candidatos, e ainda faltariam os ângulos.
+#
+# Ou seja: personagem só roda gastando crédito, e crédito aqui é o recurso
+# escasso. Enquanto for assim, a consistência continua saindo do model sheet
+# em texto, que é o contrato que a whoiam já usa e que custa zero. Revisitar
+# quando a Kairogen consertar a cotação.
+
 
 def _instrucao_render(pasta: Path) -> str:
     """O trecho que manda renderizar de verdade, e não só descrever.
@@ -83,6 +104,9 @@ def _instrucao_render(pasta: Path) -> str:
         "único ilimitado do plano, e os demais gastam crédito. A geração é "
         "assíncrona — guarde o generation_id e consulte get_generation até o "
         "status ficar COMPLETED, de onde sai a output_url. "
+        f"Dispare até {KAIROGEN_IMAGENS_SIMULTANEAS} gerações ao mesmo tempo "
+        "(é o teto do plano) e só então fique esperando: em fila de uma em "
+        "uma, catorze painéis viram catorze esperas. "
         f"BAIXE cada imagem com o Bash, assim: curl -sS -L -o {pasta}/NOME.png "
         "\"URL\" — um arquivo por imagem, com nome que case com a seção do "
         "documento. NÃO use download_image_from_url: essa ferramenta grava um "
