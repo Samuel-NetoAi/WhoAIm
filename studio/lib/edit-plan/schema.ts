@@ -54,6 +54,13 @@ export const clipPlanSchema = z.object({
   // and the video drifts away from the narration — always go through
   // applyBoundaries, which is what the UI and every plan builder do.
   transitionFrames: z.number().int().nonnegative().optional(),
+  // Mean loudness of the clip's own audio, normalized 0..1 against the
+  // project's other clips (see probe-project.ts). Not rendered — read only
+  // by build-short-plan.ts to pick which stretch of footage a Short should
+  // feature. Default 0 for plans analyzed before this field existed, so an
+  // old project's Shorts keep picking from the front instead of the
+  // (unmeasured) loudest clip.
+  energyScore: z.number().min(0).max(1).default(0),
 });
 
 // One continuous stretch of music. A cue follows the EMOTIONAL SEQUENCE, not
@@ -114,6 +121,11 @@ export const editPlanSchema = z.object({
   narration: z.object({
     file: z.string(),
     durationInSeconds: z.number().positive(),
+    // Where in the narration FILE this plan's timeline frame 0 begins. 0 for
+    // a full plan (always the whole file); a Short built from a mid-episode
+    // window sets this instead of slicing a new audio file, so the render
+    // just trims the same source (see EditedVideo.tsx's Audio trimBefore).
+    startInSeconds: z.number().nonnegative().default(0),
   }),
   transitionFrames: z.number().int().nonnegative(),
   clips: z.array(clipPlanSchema).min(1),

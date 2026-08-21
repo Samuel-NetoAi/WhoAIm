@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import path from "node:path";
+import { NPX_COMMAND } from "@/lib/media/run-ffmpeg";
 
 export type PostProcessOptions = {
   inputPath: string;
@@ -74,9 +75,13 @@ export const postProcess = (
   ];
 
   return new Promise((resolve, reject) => {
+    // No shell for the npx fallback: shell:true concatenates the command and
+    // its args into one unescaped string, which breaks on the first space in
+    // any project path (e.g. a creature name like "Teste Episodio Pomfy") —
+    // confirmed by reproduction, same bug as run-ffmpeg.ts had.
     const child = useFullBinary
       ? spawn(FULL_FFMPEG, args, { cwd: process.cwd() })
-      : spawn("npx", args, { cwd: process.cwd(), shell: true });
+      : spawn(NPX_COMMAND, args, { cwd: process.cwd() });
     let stderr = "";
     child.stderr.on("data", (chunk) => {
       const text = chunk.toString();

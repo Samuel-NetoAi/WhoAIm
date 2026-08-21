@@ -17,11 +17,13 @@ export type BoundaryClip = {
   filter?: FilterPreset;
   transitionFromPrevious?: TransitionPreset;
   transitionFrames?: number;
+  energyScore?: number;
 };
 
 export type BoundaryNarration = {
   file: string;
   durationInSeconds: number;
+  startInSeconds?: number;
 };
 
 // Everything the plan carries that is not derived from the boundaries. It has
@@ -119,6 +121,7 @@ export const applyBoundaries = (
     transitionFromPrevious: clip.transitionFromPrevious ?? "dissolve",
     // Persist the clamped value, so what the plan says is what renders.
     transitionFrames: i === 0 ? 0 : transitionAfter[i - 1],
+    energyScore: clip.energyScore ?? 0,
   }));
 
   const cutPoints = boundaryFrames.map((f) => f / fps);
@@ -128,7 +131,11 @@ export const applyBoundaries = (
     fps,
     width,
     height,
-    narration: { file: narration.file, durationInSeconds: totalSeconds },
+    narration: {
+      file: narration.file,
+      durationInSeconds: totalSeconds,
+      startInSeconds: narration.startInSeconds ?? 0,
+    },
     transitionFrames,
     clips: planClips,
     cutPoints,

@@ -1,3 +1,4 @@
+import { isHtmlInCanvasSupported } from "remotion";
 import type { TransitionPresentation } from "@remotion/transitions";
 import { fade } from "@remotion/transitions/fade";
 import { filmBurn } from "@remotion/transitions/film-burn";
@@ -5,6 +6,19 @@ import { dreamyZoom } from "@remotion/transitions/dreamy-zoom";
 import { ripple } from "@remotion/transitions/ripple";
 import { linearBlur } from "@remotion/transitions/linear-blur";
 import type { TransitionPreset } from "../lib/edit-plan/schema";
+
+// These four composite their WebGL shader through <HtmlInCanvas>, which
+// needs a very recent Canvas API (Chrome 148+, or its chrome://flags dev
+// toggle) — present in the headless Chromium the actual render runs in
+// (verified with a real render), but often missing in whatever browser is
+// running the live editor Preview. There it throws a fatal "HTML in Canvas
+// is not supported" error instead of drawing a frame.
+const SHADER_BACKED_PRESETS = new Set<TransitionPreset>([
+  "film-burn",
+  "dreamy-zoom",
+  "ripple",
+  "linear-blur",
+]);
 
 // Editorial vocabulary -> Remotion presentation.
 //
@@ -19,6 +33,14 @@ import type { TransitionPreset } from "../lib/edit-plan/schema";
 export const presentationFor = (
   preset: TransitionPreset,
 ): TransitionPresentation<Record<string, unknown>> => {
+  // Falls back to a plain crossfade wherever HtmlInCanvas isn't available —
+  // just for THIS render pass, so the Preview stays usable instead of
+  // crashing. The real render (where the capability check passes) still gets
+  // the actual shader effect.
+  if (SHADER_BACKED_PRESETS.has(preset) && !isHtmlInCanvasSupported()) {
+    return fade();
+  }
+
   switch (preset) {
     case "fade":
       return fade({ shouldFadeOutExitingScene: true });

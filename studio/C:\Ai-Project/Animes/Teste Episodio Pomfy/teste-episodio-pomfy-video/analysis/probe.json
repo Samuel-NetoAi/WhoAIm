@@ -1,0 +1,440 @@
+{
+  "clips": [
+    {
+      "id": "000",
+      "file": "videos/000.mp4",
+      "durationInSeconds": 30.11298888888889,
+      "width": 1920,
+      "height": 1080,
+      "loudnessLufs": -25.78,
+      "energyScore": 0
+    },
+    {
+      "id": "001",
+      "file": "videos/001.mp4",
+      "durationInSeconds": 30.03,
+      "width": 1920,
+      "height": 1080,
+      "loudnessLufs": -22.18,
+      "energyScore": 0.3188662533215236
+    },
+    {
+      "id": "002",
+      "file": "videos/002.mp4",
+      "durationInSeconds": 30.03,
+      "width": 1920,
+      "height": 1080,
+      "loudnessLufs": -21.04,
+      "energyScore": 0.41984056687333937
+    },
+    {
+      "id": "003",
+      "file": "videos/003.mp4",
+      "durationInSeconds": 30.029988888888887,
+      "width": 1920,
+      "height": 1080,
+      "loudnessLufs": -19.65,
+      "energyScore": 0.5429583702391498
+    },
+    {
+      "id": "004",
+      "file": "videos/004.mp4",
+      "durationInSeconds": 30.03,
+      "width": 1920,
+      "height": 1080,
+      "loudnessLufs": -20.12,
+      "energyScore": 0.5013286093888396
+    },
+    {
+      "id": "005",
+      "file": "videos/005.mp4",
+      "durationInSeconds": 30.029988888888887,
+      "width": 1920,
+      "height": 1080,
+      "loudnessLufs": -24.33,
+      "energyScore": 0.12843224092116942
+    },
+    {
+      "id": "006",
+      "file": "videos/006.mp4",
+      "durationInSeconds": 30.03,
+      "width": 1920,
+      "height": 1080,
+      "loudnessLufs": -24.9,
+      "energyScore": 0.07794508414526151
+    },
+    {
+      "id": "007",
+      "file": "videos/007.mp4",
+      "durationInSeconds": 30.03,
+      "width": 1920,
+      "height": 1080,
+      "loudnessLufs": -22.94,
+      "energyScore": 0.2515500442869796
+    },
+    {
+      "id": "008",
+      "file": "videos/008.mp4",
+      "durationInSeconds": 30.029988888888887,
+      "width": 1920,
+      "height": 1080,
+      "loudnessLufs": -21.65,
+      "energyScore": 0.3658104517271924
+    },
+    {
+      "id": "009",
+      "file": "videos/009.mp4",
+      "durationInSeconds": 30.029988888888887,
+      "width": 1920,
+      "height": 1080,
+      "loudnessLufs": -18.94,
+      "energyScore": 0.6058458813108946
+    },
+    {
+      "id": "010",
+      "file": "videos/010.mp4",
+      "durationInSeconds": 30.03,
+      "width": 1920,
+      "height": 1080,
+      "loudnessLufs": -18.67,
+      "energyScore": 0.6297608503100087
+    },
+    {
+      "id": "011",
+      "file": "videos/011.mp4",
+      "durationInSeconds": 30.029988888888887,
+      "width": 1920,
+      "height": 1080,
+      "loudnessLufs": -18.39,
+      "energyScore": 0.6545615589016829
+    },
+    {
+      "id": "012",
+      "file": "videos/012.mp4",
+      "durationInSeconds": 30.03,
+      "width": 1920,
+      "height": 1080,
+      "loudnessLufs": -18.31,
+      "energyScore": 0.6616474756421613
+    },
+    {
+      "id": "013",
+      "file": "videos/013.mp4",
+      "durationInSeconds": 30.03,
+      "width": 1920,
+      "height": 1080,
+      "loudnessLufs": -18.91,
+      "energyScore": 0.608503100088574
+    },
+    {
+      "id": "014",
+      "file": "videos/014.mp4",
+      "durationInSeconds": 30.029988888888887,
+      "width": 1920,
+      "height": 1080,
+      "loudnessLufs": -23.13,
+      "energyScore": 0.23472099202834384
+    },
+    {
+      "id": "015",
+      "file": "videos/015.mp4",
+      "durationInSeconds": 30.03,
+      "width": 1920,
+      "height": 1080,
+      "loudnessLufs": -20.18,
+      "energyScore": 0.49601417183348107
+    },
+    {
+      "id": "016",
+      "file": "videos/016.mp4",
+      "durationInSeconds": 30.029988888888887,
+      "width": 1920,
+      "height": 1080,
+      "loudnessLufs": -18.97,
+      "energyScore": 0.6031886625332153
+    },
+    {
+      "id": "017",
+      "file": "videos/017.mp4",
+      "durationInSeconds": 30.03,
+      "width": 1920,
+      "height": 1080,
+      "loudnessLufs": -21.34,
+      "energyScore": 0.3932683790965457
+    },
+    {
+      "id": "018",
+      "file": "videos/018.mp4",
+      "durationInSeconds": 30.03,
+      "width": 1920,
+      "height": 1080,
+      "loudnessLufs": -19.72,
+      "energyScore": 0.5367581930912313
+    },
+    {
+      "id": "019",
+      "file": "videos/019.mp4",
+      "durationInSeconds": 30.03,
+      "width": 1920,
+      "height": 1080,
+      "loudnessLufs": -22.72,
+      "energyScore": 0.27103631532329514
+    },
+    {
+      "id": "020",
+      "file": "videos/020.mp4",
+      "durationInSeconds": 30.03,
+      "width": 1920,
+      "height": 1080,
+      "loudnessLufs": -20.22,
+      "energyScore": 0.49247121346324196
+    },
+    {
+      "id": "021",
+      "file": "videos/021.mp4",
+      "durationInSeconds": 30.03,
+      "width": 1920,
+      "height": 1080,
+      "loudnessLufs": -22.38,
+      "energyScore": 0.3011514614703279
+    },
+    {
+      "id": "022",
+      "file": "videos/022.mp4",
+      "durationInSeconds": 30.029988888888887,
+      "width": 1920,
+      "height": 1080,
+      "loudnessLufs": -21.16,
+      "energyScore": 0.40921169176262184
+    },
+    {
+      "id": "023",
+      "file": "videos/023.mp4",
+      "durationInSeconds": 30.03,
+      "width": 1920,
+      "height": 1080,
+      "loudnessLufs": -22.31,
+      "energyScore": 0.30735163861824644
+    },
+    {
+      "id": "024",
+      "file": "videos/024.mp4",
+      "durationInSeconds": 30.03,
+      "width": 1920,
+      "height": 1080,
+      "loudnessLufs": -25.31,
+      "energyScore": 0.04162976085031022
+    },
+    {
+      "id": "025",
+      "file": "videos/025.mp4",
+      "durationInSeconds": 30.03,
+      "width": 1920,
+      "height": 1080,
+      "loudnessLufs": -22.55,
+      "energyScore": 0.2860938883968113
+    },
+    {
+      "id": "026",
+      "file": "videos/026.mp4",
+      "durationInSeconds": 30.029988888888887,
+      "width": 1920,
+      "height": 1080,
+      "loudnessLufs": -22.41,
+      "energyScore": 0.2984942426926484
+    },
+    {
+      "id": "027",
+      "file": "videos/027.mp4",
+      "durationInSeconds": 30.03,
+      "width": 1920,
+      "height": 1080,
+      "loudnessLufs": -20.84,
+      "energyScore": 0.43755535872453505
+    },
+    {
+      "id": "028",
+      "file": "videos/028.mp4",
+      "durationInSeconds": 30.03,
+      "width": 1920,
+      "height": 1080,
+      "loudnessLufs": -20.25,
+      "energyScore": 0.4898139946855625
+    },
+    {
+      "id": "029",
+      "file": "videos/029.mp4",
+      "durationInSeconds": 30.029988888888887,
+      "width": 1920,
+      "height": 1080,
+      "loudnessLufs": -21.73,
+      "energyScore": 0.3587245349867139
+    },
+    {
+      "id": "030",
+      "file": "videos/030.mp4",
+      "durationInSeconds": 30.029988888888887,
+      "width": 1920,
+      "height": 1080,
+      "loudnessLufs": -20.77,
+      "energyScore": 0.4437555358724536
+    },
+    {
+      "id": "031",
+      "file": "videos/031.mp4",
+      "durationInSeconds": 30.03,
+      "width": 1920,
+      "height": 1080,
+      "loudnessLufs": -19.93,
+      "energyScore": 0.5181576616474757
+    },
+    {
+      "id": "032",
+      "file": "videos/032.mp4",
+      "durationInSeconds": 30.029988888888887,
+      "width": 1920,
+      "height": 1080,
+      "loudnessLufs": -17.14,
+      "energyScore": 0.7652790079716563
+    },
+    {
+      "id": "033",
+      "file": "videos/033.mp4",
+      "durationInSeconds": 30.029988888888887,
+      "width": 1920,
+      "height": 1080,
+      "loudnessLufs": -16,
+      "energyScore": 0.8662533215234721
+    },
+    {
+      "id": "034",
+      "file": "videos/034.mp4",
+      "durationInSeconds": 30.03,
+      "width": 1920,
+      "height": 1080,
+      "loudnessLufs": -18.67,
+      "energyScore": 0.6297608503100087
+    },
+    {
+      "id": "035",
+      "file": "videos/035.mp4",
+      "durationInSeconds": 30.029988888888887,
+      "width": 1920,
+      "height": 1080,
+      "loudnessLufs": -17.21,
+      "energyScore": 0.7590788308237378
+    },
+    {
+      "id": "036",
+      "file": "videos/036.mp4",
+      "durationInSeconds": 30.029988888888887,
+      "width": 1920,
+      "height": 1080,
+      "loudnessLufs": -17.35,
+      "energyScore": 0.7466784765279008
+    },
+    {
+      "id": "037",
+      "file": "videos/037.mp4",
+      "durationInSeconds": 30.03,
+      "width": 1920,
+      "height": 1080,
+      "loudnessLufs": -17.89,
+      "energyScore": 0.6988485385296722
+    },
+    {
+      "id": "038",
+      "file": "videos/038.mp4",
+      "durationInSeconds": 30.029988888888887,
+      "width": 1920,
+      "height": 1080,
+      "loudnessLufs": -21.38,
+      "energyScore": 0.3897254207263066
+    },
+    {
+      "id": "039",
+      "file": "videos/039.mp4",
+      "durationInSeconds": 30.029988888888887,
+      "width": 1920,
+      "height": 1080,
+      "loudnessLufs": -20.1,
+      "energyScore": 0.5031000885739592
+    },
+    {
+      "id": "040",
+      "file": "videos/040.mp4",
+      "durationInSeconds": 30.029988888888887,
+      "width": 1920,
+      "height": 1080,
+      "loudnessLufs": -15.66,
+      "energyScore": 0.8963684676705049
+    },
+    {
+      "id": "041",
+      "file": "videos/041.mp4",
+      "durationInSeconds": 30.029988888888887,
+      "width": 1920,
+      "height": 1080,
+      "loudnessLufs": -15.29,
+      "energyScore": 0.9291408325952171
+    },
+    {
+      "id": "042",
+      "file": "videos/042.mp4",
+      "durationInSeconds": 30.03,
+      "width": 1920,
+      "height": 1080,
+      "loudnessLufs": -14.49,
+      "energyScore": 1
+    },
+    {
+      "id": "043",
+      "file": "videos/043.mp4",
+      "durationInSeconds": 30.029988888888887,
+      "width": 1920,
+      "height": 1080,
+      "loudnessLufs": -15.76,
+      "energyScore": 0.8875110717449071
+    },
+    {
+      "id": "044",
+      "file": "videos/044.mp4",
+      "durationInSeconds": 30.029988888888887,
+      "width": 1920,
+      "height": 1080,
+      "loudnessLufs": -16.19,
+      "energyScore": 0.849424269264836
+    },
+    {
+      "id": "045",
+      "file": "videos/045.mp4",
+      "durationInSeconds": 30.029988888888887,
+      "width": 1920,
+      "height": 1080,
+      "loudnessLufs": -18.18,
+      "energyScore": 0.6731620903454385
+    },
+    {
+      "id": "046",
+      "file": "videos/046.mp4",
+      "durationInSeconds": 30.03,
+      "width": 1920,
+      "height": 1080,
+      "loudnessLufs": -18.24,
+      "energyScore": 0.6678476527900798
+    },
+    {
+      "id": "047",
+      "file": "videos/047.mp4",
+      "durationInSeconds": 23.69904761904762,
+      "width": 1920,
+      "height": 1080,
+      "loudnessLufs": -18.71,
+      "energyScore": 0.6262178919397697
+    }
+  ],
+  "narration": {
+    "file": "audio/episode.m4a",
+    "durationInSeconds": 1435.1090476190477
+  }
+}

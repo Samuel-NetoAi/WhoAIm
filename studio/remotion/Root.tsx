@@ -25,7 +25,11 @@ const DEFAULT_PLAN: EditPlan = {
   fps: 30,
   width: 1920,
   height: 1080,
-  narration: { file: "audio/placeholder.mp3", durationInSeconds: 1 },
+  narration: {
+    file: "audio/placeholder.mp3",
+    durationInSeconds: 1,
+    startInSeconds: 0,
+  },
   transitionFrames: 0,
   clips: [
     {
@@ -37,6 +41,7 @@ const DEFAULT_PLAN: EditPlan = {
       audioMode: "mix",
       filter: "none",
       transitionFromPrevious: "dissolve",
+      energyScore: 0,
     },
   ],
   music: [],

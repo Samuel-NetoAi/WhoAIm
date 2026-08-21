@@ -1,6 +1,7 @@
 import { readdirSync } from "node:fs";
 import path from "node:path";
 import { getMediaDuration, getVideoDimensions } from "./get-media-duration";
+import { measureClipLoudness } from "./measure-loudness";
 
 const VIDEO_EXTENSIONS = new Set([".mp4", ".mov", ".webm"]);
 const AUDIO_EXTENSIONS = new Set([
@@ -20,6 +21,14 @@ export type ClipProbe = {
   durationInSeconds: number;
   width: number;
   height: number;
+  // Integrated loudness (LUFS) of the clip's own audio track, from ffmpeg's
+  // loudnorm filter — see measure-loudness.ts.
+  loudnessLufs: number;
+  // loudnessLufs min-max normalized against this project's OWN clips (0..1)
+  // — "loud" is relative to what this footage actually contains, not an
+  // absolute broadcast standard. Used by build-short-plan.ts to pick which
+  // stretch of footage is the "best moment" for a Short.
+  energyScore: number;
 };
 
 export type NarrationProbe = {
@@ -58,9 +67,10 @@ export const probeProject = async (
   const clips: ClipProbe[] = [];
   for (const file of videoFiles) {
     const absolutePath = path.join(videosDir, file);
-    const [durationInSeconds, dimensions] = await Promise.all([
+    const [durationInSeconds, dimensions, loudnessLufs] = await Promise.all([
       getMediaDuration(absolutePath),
       getVideoDimensions(absolutePath),
+      measureClipLoudness(absolutePath),
     ]);
     clips.push({
       id: path.parse(file).name,
@@ -68,7 +78,21 @@ export const probeProject = async (
       absolutePath,
       durationInSeconds,
       ...dimensions,
+      loudnessLufs,
+      energyScore: 0, // filled in below, once every clip's loudness is known
     });
+  }
+
+  const loudnessValues = clips.map((clip) => clip.loudnessLufs);
+  const minDb = Math.min(...loudnessValues);
+  const maxDb = Math.max(...loudnessValues);
+  const spreadDb = maxDb - minDb;
+  for (const clip of clips) {
+    // All clips equally loud (or a single clip) carries no signal either
+    // way — 0.5 keeps every window's average energy tied, so selection
+    // falls back to picking by duration fit alone.
+    clip.energyScore =
+      spreadDb > 0.01 ? (clip.loudnessLufs - minDb) / spreadDb : 0.5;
   }
 
   const audioFiles = readdirSync(audioDir).filter((f) =>

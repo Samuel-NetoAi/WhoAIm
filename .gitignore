@@ -25,6 +25,10 @@ studio/bin/
 # Modelo Vosk pt-BR (52 MB) — baixe de alphacephei.com/vosk/models
 voice/models/
 
+# Episódio bruto zipado pra upload — mídia, não código; a mesma regra da
+# seção abaixo se aplica, só que zip não é pego pelas extensões de vídeo.
+*.zip
+
 # ─── Mídia: pesada e só necessária na máquina que renderiza ───────────────
 # A regra do projeto: TEXTO sincroniza, MÍDIA não. Ver docs/GIT-E-SINCRONIA.md
 public/videos/
@@ -74,3 +78,6 @@ voice/config/curso.json
 voice/_app.log
 voice/_app.err
 voice/_audio_fp/
+
+# Lock de sessão do Claude Code: estado efêmero de PID/timestamp, não config.
+.claude/scheduled_tasks.lock

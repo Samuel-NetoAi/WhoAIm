@@ -10,8 +10,10 @@ import {
 } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { isHtmlInCanvasSupported } from "remotion";
 import { Player } from "@remotion/player";
 import { EditedVideo } from "@/remotion/EditedVideo";
+import { Clip } from "@/remotion/Clip";
 import { calculateTotalFrames } from "@/lib/edit-plan/calculate-total-frames";
 import { applyBoundaries } from "@/lib/edit-plan/apply-boundaries";
 import type {
@@ -67,6 +69,20 @@ type RenderJob = {
 const filenameFromOutputPath = (outputPath: string): string =>
   encodeURIComponent(outputPath.split(/[\\/]/).pop() ?? "");
 
+// A dev-server hot-reload (Turbopack recompiling a route on the next hit) —
+// or any other transient hiccup — can hand back an empty or non-JSON body.
+// A bare `res.json()` throws on that, and an uncaught throw here crashes the
+// whole page (this is a client component). Every fetch below goes through
+// this instead, so a hiccup degrades to a status message rather than a
+// blank error screen.
+const safeJson = async (res: Response) => {
+  try {
+    return await res.json();
+  } catch {
+    return null;
+  }
+};
+
 export default function ProjectPage() {
   const { projectId } = useParams<{ projectId: string }>();
 
@@ -88,6 +104,17 @@ export default function ProjectPage() {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [analysisNotes, setAnalysisNotes] = useState<string[]>([]);
   const [shortTargetSeconds, setShortTargetSeconds] = useState(30);
+  const [previewMode, setPreviewMode] = useState<"full" | "clip">("full");
+  const [selectedClipIndex, setSelectedClipIndex] = useState(0);
+  // Checked once client-side: the shader-backed transitions (queima de
+  // filme, zoom onírico, ondulação, desfoque linear) need a very recent
+  // Canvas API this browser may not have — see remotion/transitions.ts. The
+  // render always has it; only the live Preview here might not.
+  const [htmlInCanvasSupported, setHtmlInCanvasSupported] = useState(true);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setHtmlInCanvasSupported(isHtmlInCanvasSupported());
+  }, []);
   const [jobs, setJobs] = useState<Record<RenderTarget, RenderJob | null>>({
     full: null,
     short: null,
@@ -95,11 +122,13 @@ export default function ProjectPage() {
 
   const zipInputRef = useRef<HTMLInputElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
+  const videoInputRef = useRef<HTMLInputElement>(null);
+  const [segmentSeconds, setSegmentSeconds] = useState(30);
 
   const loadEditPlan = async () => {
     const res = await fetch(`/api/projects/${projectId}/edit-plan`);
-    if (res.ok) {
-      const data = await res.json();
+    const data = await safeJson(res);
+    if (res.ok && data) {
       setEditPlan(data.editPlan);
       setCutPoints(data.editPlan.cutPoints ?? null);
       setAudioModes(audioModesFromPlan(data.editPlan));
@@ -108,16 +137,15 @@ export default function ProjectPage() {
       setDirty(false);
       setPlanError(null);
     } else {
-      const data = await res.json().catch(() => ({}));
       setEditPlan(null);
-      setPlanError(data.error ?? "Sem plano ainda");
+      setPlanError(data?.error ?? "Sem plano ainda");
     }
   };
 
   const loadSilences = async () => {
     const res = await fetch(`/api/projects/${projectId}/silences`);
-    if (res.ok) {
-      const data = await res.json();
+    const data = await safeJson(res);
+    if (res.ok && data) {
       setSilences(data.silences ?? []);
     }
   };
@@ -144,6 +172,7 @@ export default function ProjectPage() {
         filter: filters[clip.id] ?? clip.filter,
         transitionFromPrevious:
           transitions[clip.id] ?? clip.transitionFromPrevious,
+        energyScore: clip.energyScore,
       })),
       editPlan.narration,
       cutPoints.slice(1, -1),
@@ -173,6 +202,10 @@ export default function ProjectPage() {
       if (zipInputRef.current?.files?.[0]) {
         formData.append("videosZip", zipInputRef.current.files[0]);
       }
+      if (videoInputRef.current?.files?.[0]) {
+        formData.append("video", videoInputRef.current.files[0]);
+        formData.append("segmentSeconds", String(segmentSeconds));
+      }
       if (audioInputRef.current?.files?.[0]) {
         formData.append("narration", audioInputRef.current.files[0]);
       }
@@ -180,7 +213,10 @@ export default function ProjectPage() {
         method: "POST",
         body: formData,
       });
-      if (!uploadRes.ok) throw new Error("Falha no upload");
+      if (!uploadRes.ok) {
+        const uploadData = await uploadRes.json().catch(() => ({}));
+        throw new Error(uploadData.error ?? "Falha no upload");
+      }
 
       await runAnalyze();
     } catch (err) {
@@ -197,9 +233,9 @@ export default function ProjectPage() {
     const analyzeRes = await fetch(`/api/projects/${projectId}/analyze`, {
       method: "POST",
     });
-    const analyzeData = await analyzeRes.json();
-    if (!analyzeRes.ok)
-      throw new Error(analyzeData.error ?? "Falha na análise");
+    const analyzeData = await safeJson(analyzeRes);
+    if (!analyzeRes.ok || !analyzeData)
+      throw new Error(analyzeData?.error ?? "Falha na análise");
 
     setEditPlan(analyzeData.editPlan);
     setCutPoints(analyzeData.editPlan.cutPoints ?? null);
@@ -246,8 +282,8 @@ export default function ProjectPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(previewPlan),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error("Falha ao salvar cortes");
+      const data = await safeJson(res);
+      if (!res.ok || !data) throw new Error(data?.error ?? "Falha ao salvar cortes");
       setEditPlan(data.editPlan);
       setCutPoints(data.editPlan.cutPoints ?? null);
       setAudioModes(audioModesFromPlan(data.editPlan));
@@ -274,9 +310,9 @@ export default function ProjectPage() {
         ...(target === "short" ? { targetSeconds: shortTargetSeconds } : {}),
       }),
     });
-    const data = await res.json();
-    if (!res.ok) {
-      setStatusMessage(data.error ?? "Falha ao iniciar render");
+    const data = await safeJson(res);
+    if (!res.ok || !data) {
+      setStatusMessage(data?.error ?? "Falha ao iniciar render");
       return;
     }
     setJobs((prev) => ({
@@ -297,9 +333,9 @@ export default function ProjectPage() {
         upscale2x: postUpscale,
       }),
     });
-    const data = await res.json();
-    if (!res.ok) {
-      setStatusMessage(data.error ?? "Falha no pós-processamento");
+    const data = await safeJson(res);
+    if (!res.ok || !data) {
+      setStatusMessage(data?.error ?? "Falha no pós-processamento");
       return;
     }
     setPostJob({
@@ -316,8 +352,8 @@ export default function ProjectPage() {
       const res = await fetch(
         `/api/projects/${projectId}/render/${postJob.id}`,
       );
-      const data = await res.json();
-      if (res.ok) setPostJob(data.job);
+      const data = await safeJson(res);
+      if (res.ok && data) setPostJob(data.job);
     }, 1500);
     return () => clearInterval(interval);
   }, [postJob, projectId]);
@@ -334,8 +370,8 @@ export default function ProjectPage() {
         const res = await fetch(
           `/api/projects/${projectId}/render/${job.id}`,
         );
-        const data = await res.json();
-        if (res.ok) {
+        const data = await safeJson(res);
+        if (res.ok && data) {
           setJobs((prev) => ({ ...prev, [job.target]: data.job }));
         }
       }
@@ -361,7 +397,25 @@ export default function ProjectPage() {
               <input ref={zipInputRef} type="file" accept=".zip" />
             </label>
             <label>
-              Narração{" "}
+              Ou vídeo completo (episódio já editado){" "}
+              <input ref={videoInputRef} type="file" accept="video/*" />
+            </label>
+            <label>
+              Duração de cada clipe cortado do vídeo completo{" "}
+              <input
+                type="number"
+                min={5}
+                value={segmentSeconds}
+                onChange={(e) =>
+                  setSegmentSeconds(Number(e.target.value) || 30)
+                }
+                style={{ width: 62 }}
+              />
+              s
+            </label>
+            <label>
+              Narração (se vazio e um vídeo completo for enviado, o áudio do
+              próprio vídeo vira a narração){" "}
               <input ref={audioInputRef} type="file" accept="audio/*" />
             </label>
             <div className="row">
@@ -386,19 +440,106 @@ export default function ProjectPage() {
         {planError && !editPlan && <p className="hint">{planError}</p>}
         {previewPlan && (
           <>
-            <Player
-              component={EditedVideo}
-              inputProps={{
-                editPlan: previewPlan,
-                mediaBaseUrl: `/api/projects/${projectId}/media`,
-              }}
-              durationInFrames={calculateTotalFrames(previewPlan)}
-              compositionWidth={previewPlan.width}
-              compositionHeight={previewPlan.height}
-              fps={previewPlan.fps}
-              controls
-              style={{ width: "100%", maxWidth: 640 }}
-            />
+            {(() => {
+              const clipIndex = Math.min(
+                selectedClipIndex,
+                previewPlan.clips.length - 1,
+              );
+              const selectedClip = previewPlan.clips[clipIndex];
+              return (
+                <>
+                  <div
+                    className="row"
+                    style={{ marginBottom: "0.6rem", gap: "0.4rem" }}
+                  >
+                    <button
+                      className={previewMode === "full" ? "primary" : ""}
+                      onClick={() => setPreviewMode("full")}
+                    >
+                      Vídeo completo
+                    </button>
+                    <button
+                      className={previewMode === "clip" ? "primary" : ""}
+                      onClick={() => setPreviewMode("clip")}
+                    >
+                      Corte isolado
+                    </button>
+                  </div>
+
+                  {previewMode === "full" ? (
+                    <Player
+                      component={EditedVideo}
+                      inputProps={{
+                        editPlan: previewPlan,
+                        mediaBaseUrl: `/api/projects/${projectId}/media`,
+                      }}
+                      durationInFrames={calculateTotalFrames(previewPlan)}
+                      compositionWidth={previewPlan.width}
+                      compositionHeight={previewPlan.height}
+                      fps={previewPlan.fps}
+                      controls
+                      style={{ width: "100%", maxWidth: 640 }}
+                    />
+                  ) : (
+                    <>
+                      <div
+                        className="row"
+                        style={{
+                          marginBottom: "0.5rem",
+                          alignItems: "center",
+                          gap: "0.6rem",
+                        }}
+                      >
+                        <button
+                          onClick={() =>
+                            setSelectedClipIndex((i) => Math.max(0, i - 1))
+                          }
+                          disabled={clipIndex === 0}
+                        >
+                          ‹ anterior
+                        </button>
+                        <span>
+                          Cena {clipIndex + 1} de {previewPlan.clips.length}
+                        </span>
+                        <button
+                          onClick={() =>
+                            setSelectedClipIndex((i) =>
+                              Math.min(previewPlan.clips.length - 1, i + 1),
+                            )
+                          }
+                          disabled={clipIndex === previewPlan.clips.length - 1}
+                        >
+                          próxima ›
+                        </button>
+                      </div>
+                      {/* key forces the Player to remount on a new clip instead of
+                          reusing the old one's video element mid-seek. */}
+                      <Player
+                        key={selectedClip.id}
+                        component={Clip}
+                        inputProps={{
+                          file: selectedClip.file,
+                          mediaBaseUrl: `/api/projects/${projectId}/media`,
+                          naturalDurationInSeconds:
+                            selectedClip.naturalDurationInSeconds,
+                          slotFrames: selectedClip.slotDurationInFrames,
+                          width: previewPlan.width,
+                          height: previewPlan.height,
+                          audioMode: selectedClip.audioMode,
+                          filter: selectedClip.filter,
+                        }}
+                        durationInFrames={selectedClip.slotDurationInFrames}
+                        compositionWidth={previewPlan.width}
+                        compositionHeight={previewPlan.height}
+                        fps={previewPlan.fps}
+                        controls
+                        style={{ width: "100%", maxWidth: 640 }}
+                      />
+                    </>
+                  )}
+                </>
+              );
+            })()}
 
             <div style={{ marginTop: "1.5rem" }}>
               <h3>
@@ -443,6 +584,16 @@ export default function ProjectPage() {
                   transição é a ENTRADA da cena — a primeira não tem.
                 </span>
               </h3>
+              {!htmlInCanvasSupported && (
+                <p className="hint">
+                  Seu navegador não suporta uma API de Canvas recente demais
+                  que as transições &quot;queima de filme&quot;, &quot;zoom
+                  onírico&quot;, &quot;ondulação&quot; e &quot;desfoque
+                  linear&quot; usam para desenhar na prévia — aqui elas
+                  aparecem como um dissolve simples. O vídeo renderizado usa o
+                  efeito de verdade normalmente.
+                </p>
+              )}
               <div style={{ marginBottom: "0.7rem" }}>
                 <label>
                   Filtro em todas as cenas:{" "}
@@ -473,13 +624,21 @@ export default function ProjectPage() {
               <div className="scene-grid">
                 {previewPlan.clips.map((clip, i) => (
                   <Fragment key={clip.id}>
-                    <span className="scene-label">
+                    <button
+                      type="button"
+                      className="scene-label"
+                      title="Ver este corte isolado"
+                      onClick={() => {
+                        setSelectedClipIndex(i);
+                        setPreviewMode("clip");
+                      }}
+                    >
                       Cena {i + 1}
                       <br />
                       <span className="scene-cue">
                         {cues[i] ? `♪ ${cues[i]}` : "sem música"}
                       </span>
-                    </span>
+                    </button>
                     <select
                       value={audioModes[clip.id] ?? clip.audioMode ?? "mix"}
                       onChange={(e) => {
