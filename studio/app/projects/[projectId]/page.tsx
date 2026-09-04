@@ -64,6 +64,16 @@ type RenderJob = {
   error?: string;
 };
 
+type EnhanceJob = {
+  id: string;
+  status: "rendering" | "done" | "error";
+  progress: number;
+  currentClip?: number;
+  totalClips?: number;
+  outputPath?: string;
+  error?: string;
+};
+
 const filenameFromOutputPath = (outputPath: string): string =>
   encodeURIComponent(outputPath.split(/[\\/]/).pop() ?? "");
 
@@ -83,6 +93,14 @@ export default function ProjectPage() {
   const [postSource, setPostSource] = useState<string | null>(null);
   const [post60, setPost60] = useState(false);
   const [postUpscale, setPostUpscale] = useState(true);
+  // Shown right after upload, before analyze runs — lets the user choose to
+  // enhance raw clips first (see PLANO B: this has to happen BEFORE analyze
+  // measures clip durations, or narration/music drift out of sync with the
+  // now-different clip lengths).
+  const [awaitingEnhanceDecision, setAwaitingEnhanceDecision] = useState(false);
+  const [enhanceJob, setEnhanceJob] = useState<EnhanceJob | null>(null);
+  const [enhanceInterpolate, setEnhanceInterpolate] = useState(false);
+  const [enhanceUpscale, setEnhanceUpscale] = useState(true);
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -182,7 +200,12 @@ export default function ProjectPage() {
       });
       if (!uploadRes.ok) throw new Error("Falha no upload");
 
-      await runAnalyze();
+      // Don't auto-analyze: give the user the chance to enhance clips first.
+      // Enhancing AFTER analyze would leave the EditPlan holding stale clip
+      // durations (see PLANO B) — narration/music are timed against those
+      // durations, so this order isn't cosmetic.
+      setStatusMessage("Enviado. Melhorar clipes antes de analisar?");
+      setAwaitingEnhanceDecision(true);
     } catch (err) {
       setStatusMessage(
         err instanceof Error ? err.message : "Erro desconhecido",
@@ -221,6 +244,39 @@ export default function ProjectPage() {
     // matched nothing, a cue with no track, an alignment that did not fit the
     // clip count. Hiding that would make "loaded" and "worked" look the same.
     setAnalysisNotes(analyzeData.notes ?? []);
+  };
+
+  const handleEnhanceClips = async () => {
+    setEnhanceJob(null);
+    setStatusMessage("Melhorando clipes...");
+    const res = await fetch(`/api/projects/${projectId}/enhance-clips`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        interpolateTo60: enhanceInterpolate,
+        upscale: enhanceUpscale,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      setStatusMessage(data.error ?? "Falha ao melhorar clipes");
+      return;
+    }
+    setEnhanceJob({ id: data.jobId, status: "rendering", progress: 0 });
+  };
+
+  const handleSkipEnhance = async () => {
+    setBusy(true);
+    setAwaitingEnhanceDecision(false);
+    try {
+      await runAnalyze();
+    } catch (err) {
+      setStatusMessage(
+        err instanceof Error ? err.message : "Erro desconhecido",
+      );
+    } finally {
+      setBusy(false);
+    }
   };
 
   const handleResetCuts = async () => {
@@ -294,7 +350,7 @@ export default function ProjectPage() {
       body: JSON.stringify({
         filename: postSource,
         interpolateTo60: post60,
-        upscale2x: postUpscale,
+        upscale: postUpscale,
       }),
     });
     const data = await res.json();
@@ -321,6 +377,33 @@ export default function ProjectPage() {
     }, 1500);
     return () => clearInterval(interval);
   }, [postJob, projectId]);
+
+  useEffect(() => {
+    if (enhanceJob?.status !== "rendering") return;
+    const interval = setInterval(async () => {
+      const res = await fetch(
+        `/api/projects/${projectId}/render/${enhanceJob.id}`,
+      );
+      const data = await res.json();
+      if (!res.ok) return;
+      setEnhanceJob(data.job);
+      if (data.job.status === "done") {
+        // Only now — after the on-disk clips are final — is it safe for
+        // analyze to measure their durations (see PLANO B).
+        setAwaitingEnhanceDecision(false);
+        setStatusMessage(data.job.outputPath ?? "Clipes melhorados.");
+        runAnalyze().catch((err) =>
+          setStatusMessage(
+            err instanceof Error ? err.message : "Erro ao analisar",
+          ),
+        );
+      } else if (data.job.status === "error") {
+        setStatusMessage(data.job.error ?? "Falha ao melhorar clipes");
+      }
+    }, 1500);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enhanceJob, projectId]);
 
   useEffect(() => {
     const pending = (Object.values(jobs) as (RenderJob | null)[]).filter(
@@ -366,7 +449,7 @@ export default function ProjectPage() {
             </label>
             <div className="row">
               <button type="submit" className="primary" disabled={busy}>
-                {busy ? "Processando..." : "Enviar e analisar"}
+                {busy ? "Enviando..." : "Enviar"}
               </button>
               {statusMessage && <span className="status">{statusMessage}</span>}
             </div>
@@ -380,6 +463,60 @@ export default function ProjectPage() {
           </form>
         </div>
       </section>
+
+      {awaitingEnhanceDecision && (
+        <section className="card">
+          <h2>1.5. Melhorar clipes (opcional)</h2>
+          <p className="hint">
+            Roda upscale/interpolação em cada clipe ANTES de analisar — feito
+            depois, a narração e a música dessincronizam (ver PLANO B).
+            100% local, sem gasto de crédito; só custa tempo de máquina.
+          </p>
+          <div className="stack">
+            <label>
+              <input
+                type="checkbox"
+                checked={enhanceUpscale}
+                onChange={(e) => setEnhanceUpscale(e.target.checked)}
+                disabled={enhanceJob?.status === "rendering"}
+              />{" "}
+              Upscale para Full HD (lado curto em 1080px, sem reduzir clipes
+              já maiores)
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={enhanceInterpolate}
+                onChange={(e) => setEnhanceInterpolate(e.target.checked)}
+                disabled={enhanceJob?.status === "rendering"}
+              />{" "}
+              Interpolar para 60fps (mais lento: ~80s por clipe de 15s)
+            </label>
+            <div className="row">
+              <button
+                type="button"
+                className="primary"
+                onClick={handleEnhanceClips}
+                disabled={
+                  enhanceJob?.status === "rendering" ||
+                  (!enhanceUpscale && !enhanceInterpolate)
+                }
+              >
+                {enhanceJob?.status === "rendering"
+                  ? `Melhorando (${enhanceJob.currentClip ?? 0}/${enhanceJob.totalClips ?? "?"})...`
+                  : "Melhorar clipes e analisar"}
+              </button>
+              <button
+                type="button"
+                onClick={handleSkipEnhance}
+                disabled={busy || enhanceJob?.status === "rendering"}
+              >
+                Pular e analisar direto
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
 
       <section className="card">
         <h2>2. Prévia</h2>
@@ -653,7 +790,14 @@ export default function ProjectPage() {
               borderTop: "1px solid var(--border)",
             }}
           >
-            <h3>Pós-processamento — {postSource}</h3>
+            <h3>Pós-processamento manual — {postSource}</h3>
+            <p className="hint">
+              Caminho legado: roda sobre este render já pronto. Prefira
+              melhorar os clipes ANTES de analisar (passo 1.5, acima) — mais
+              rápido de iterar e sem risco de dessincronizar áudio.
+              Idempotente: se os clipes já foram melhorados, isto não faz
+              nada de novo.
+            </p>
             <div className="stack" style={{ gap: "0.4rem" }}>
               <label>
                 <input
@@ -670,7 +814,7 @@ export default function ProjectPage() {
                   checked={postUpscale}
                   onChange={(e) => setPostUpscale(e.target.checked)}
                 />{" "}
-                Upscale 2x <span className="hint">(rápido)</span>
+                Upscale para Full HD <span className="hint">(rápido)</span>
               </label>
             </div>
             <div className="row" style={{ marginTop: "0.75rem" }}>

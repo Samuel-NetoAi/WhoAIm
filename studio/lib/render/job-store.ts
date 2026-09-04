@@ -1,12 +1,16 @@
 export type RenderJob = {
   id: string;
   projectId: string;
-  target: "full" | "short" | "post";
+  target: "full" | "short" | "post" | "enhance";
   status: "rendering" | "done" | "error";
   progress: number;
   outputPath?: string;
   error?: string;
   startedAt: number;
+  // "enhance" jobs process many clips, not one file — lets the UI show
+  // "clipe 7/40" instead of a single opaque progress bar covering all of them.
+  currentClip?: number;
+  totalClips?: number;
 };
 
 // In-memory only — fine for a single local user with no restart-resilience

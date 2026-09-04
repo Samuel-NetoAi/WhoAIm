@@ -15,8 +15,10 @@
 export type Resolution = { width: number; height: number };
 
 // Short side of the target frame. 1080 is the lowest resolution YouTube still
-// treats as "HD" for bitrate/codec purposes.
-const MINIMUM_SHORT_SIDE = 1080;
+// treats as "HD" for bitrate/codec purposes. Exported so the clip-enhancement
+// pipeline (lib/media/enhance-clips.ts) targets the exact same number instead
+// of duplicating it — "what counts as HD" lives in one place.
+export const MINIMUM_SHORT_SIDE = 1080;
 
 // h264 requires even dimensions; an odd width fails the encode outright.
 const toEven = (value: number): number => Math.round(value / 2) * 2;
