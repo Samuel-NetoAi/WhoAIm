@@ -37,6 +37,7 @@ export const Clip: React.FC<{
   height: number;
   audioMode?: AudioMode;
   filter?: FilterPreset;
+  cropX?: number;
 }> = ({
   file,
   mediaBaseUrl,
@@ -46,6 +47,7 @@ export const Clip: React.FC<{
   height,
   audioMode = "mix",
   filter = "none",
+  cropX = 0.5,
 }) => {
   const { fps } = useVideoConfig();
   const frame = useCurrentFrame();
@@ -76,7 +78,16 @@ export const Clip: React.FC<{
           volume={volumeForAudioMode(audioMode)}
           trimAfter={playFrames}
           objectFit="cover"
-          style={{ width, height }}
+          // `cover` already fills a frame of a different aspect by cropping;
+          // objectPosition is what decides WHICH part survives the crop. It
+          // only has any effect when the aspects differ (the 9:16 Short out of
+          // 16:9 footage) — on a matching aspect there is nothing to crop and
+          // the value is inert.
+          style={{
+            width,
+            height,
+            objectPosition: `${cropX * 100}% 50%`,
+          }}
         />
       </Freeze>
     </AbsoluteFill>

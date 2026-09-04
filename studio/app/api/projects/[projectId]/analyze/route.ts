@@ -9,6 +9,7 @@ import { detectSilences } from "@/lib/media/detect-silences";
 import { loadScenes } from "@/lib/scenes/load-scenes";
 import { directionsForClips } from "@/lib/scenes/schema";
 import { boundariesForClips, loadAlignment } from "@/lib/alignment/load-alignment";
+import { loadCaptions } from "@/lib/alignment/load-captions";
 import { loadCatalog } from "@/lib/music/catalog";
 import { buildMusicCues } from "@/lib/music/build-cues";
 import { copyTracksIntoProject } from "@/lib/music/copy-tracks";
@@ -133,6 +134,22 @@ export async function POST(
   // Music last: the cues are laid out against the plan's own cut points, so
   // they can only be built once the boundaries are settled.
   editPlan.narrationPauses = silences;
+
+  // Subtitles are timed against the NARRATION, not against the cut points, so
+  // unlike the music cues they need no re-stretching and can be attached
+  // whichever strategy set the boundaries. `burnCaptions` stays false here:
+  // the full cut ships its .srt to YouTube, and it is the Short that burns
+  // them in (see buildShortPlan).
+  const { captions, problem: captionsProblem } = loadCaptions(
+    paths.projectPath,
+  );
+  if (captionsProblem) notes.push(captionsProblem);
+  editPlan.captions = captions;
+  if (captions.length > 0) {
+    notes.push(
+      `legendas: ${captions.length} de Alpha/align, queimadas no Short`,
+    );
+  }
   if (scenes) {
     const { tracks, problem: catalogProblem } = loadCatalog();
     if (catalogProblem) notes.push(catalogProblem);

@@ -167,7 +167,17 @@ def main() -> None:
             {
                 "version": 1,
                 "idioma": args.idioma,
-                "legendas": [asdict(c) for c in legendas],
+                # `linhas` vai junto de propósito, e não é redundância: quem
+                # decide onde a legenda quebra é o `legendas.py` (42 caracteres
+                # por linha, no máximo 2, sem partir palavra — convenção
+                # Netflix/BBC), e é a ÚNICA cabeça que decide isso. O `asdict`
+                # sozinho não a inclui, porque `linhas` é property e não campo
+                # do dataclass — e sem ela o Studio teria que reimplementar a
+                # mesma regra em TypeScript, que é como duas cabeças começam a
+                # discordar sobre a mesma legenda.
+                "legendas": [
+                    {**asdict(c), "linhas": c.linhas} for c in legendas
+                ],
             },
             ensure_ascii=False,
             indent=2,

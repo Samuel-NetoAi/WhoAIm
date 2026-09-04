@@ -51,11 +51,21 @@ const MOUNT_TIMEOUT_MS = 300_000;
 // bundle() copies the given publicDir's contents into the output bundle, so
 // a fresh bundle is needed whenever the project (and therefore its public
 // dir) changes. Renders of the same project back-to-back reuse the bundle.
+//
+// The cache is keyed ONLY on publicDir, which means it does not notice the
+// composition's own SOURCE changing. In production that is right — the code
+// cannot change without the process restarting. In development it is a trap
+// that cost a real debugging detour on 04/09/2026: a fix to remotion/
+// Captions.tsx was rendered twice, produced a byte-for-byte identical frame
+// both times, and looked like a broken fix when it was a stale bundle. Next's
+// hot reload swaps the API route's module and leaves this module-level cache
+// untouched, so nothing visible says the render is running old code.
+const IS_DEV = process.env.NODE_ENV !== "production";
 let cachedServeUrl: string | null = null;
 let cachedPublicDir: string | null = null;
 
 const getServeUrl = async (publicDir: string): Promise<string> => {
-  if (cachedServeUrl && cachedPublicDir === publicDir) {
+  if (!IS_DEV && cachedServeUrl && cachedPublicDir === publicDir) {
     return cachedServeUrl;
   }
   cachedServeUrl = await bundle({ entryPoint: ENTRY_POINT, publicDir });

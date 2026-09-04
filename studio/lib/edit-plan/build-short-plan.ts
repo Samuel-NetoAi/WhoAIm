@@ -1,5 +1,6 @@
 import type { EditPlan } from "./schema";
 import { applyBoundaries } from "./apply-boundaries";
+import { SHORT_RESOLUTION } from "./output-resolution";
 
 export const DEFAULT_SHORT_TARGET_SECONDS = 30;
 
@@ -50,6 +51,15 @@ export const buildShortPlan = (
       scenes: cue.scenes.filter((scene) => scene <= lastKeptScene),
     }));
 
+  // Same prefix logic as the music, minus the re-stretching: a caption is a
+  // measured moment in the narration, and the narration is the same file
+  // simply truncated at `cutoff`. A caption that straddles the cutoff is kept
+  // and clipped — cutting a subtitle's tail is better than dropping a line
+  // that is half-spoken on screen.
+  const captions = (fullPlan.captions ?? [])
+    .filter((caption) => caption.t0 < cutoff)
+    .map((caption) => ({ ...caption, t1: Math.min(caption.t1, cutoff) }));
+
   return applyBoundaries(
     includedClips.map((clip) => ({
       id: clip.id,
@@ -57,17 +67,32 @@ export const buildShortPlan = (
       durationInSeconds: clip.naturalDurationInSeconds,
       audioMode: clip.audioMode,
       filter: clip.filter,
+      // Centred crop today. This is the single number a reframing analyser
+      // would fill in per scene to follow the subject instead — see
+      // ESTUDO-STUDIO-melhorias §C3 for why that analyser must write a crop
+      // track rather than re-encode the video.
+      cropX: clip.cropX,
     })),
     { file: fullPlan.narration.file, durationInSeconds: cutoff },
     internalBoundarySeconds,
     fullPlan.fps,
     fullPlan.transitionFrames,
-    fullPlan.width,
-    fullPlan.height,
+    // NOT fullPlan.width/height. The Short is a different FRAME, not just a
+    // shorter one: 1080x1920, with the 16:9 footage cropped into it by
+    // Clip.tsx's object-fit:cover + cropX. Inheriting the full plan's
+    // dimensions is what made every Short so far a 16:9 video in a vertical
+    // feed.
+    SHORT_RESOLUTION.width,
+    SHORT_RESOLUTION.height,
     {
       music,
       ducking: fullPlan.ducking,
       narrationPauses: fullPlan.narrationPauses,
+      captions,
+      // The Short is the one cut that burns them in: it autoplays muted in
+      // the feed, so an un-captioned Short is a silent Short. This is what
+      // align/README.md meant by "para o Studio/Remotion queimar no Short".
+      burnCaptions: captions.length > 0,
     },
   );
 };

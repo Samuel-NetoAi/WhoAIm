@@ -54,6 +54,16 @@ export const clipPlanSchema = z.object({
   // and the video drifts away from the narration — always go through
   // applyBoundaries, which is what the UI and every plan builder do.
   transitionFrames: z.number().int().nonnegative().optional(),
+  // Horizontal focal point, 0 (left edge) to 1 (right edge), used only when
+  // the output frame's aspect differs from the clip's — which is exactly the
+  // 9:16 Short cropped out of 16:9 footage. 0.5 is a centred crop, which is
+  // what a plain object-fit:cover already does, so the default changes
+  // nothing. It exists as a per-clip field because the eventual reframing
+  // analysis (PyAutoFlip as an ANALYSER writing a crop track, never as a
+  // re-encoder — see ESTUDO-STUDIO §C3) has to land somewhere, and the
+  // difference between "centred crop" and "crop that follows the subject" is
+  // the value of this one number per scene.
+  cropX: z.number().min(0).max(1).default(0.5),
 });
 
 // One continuous stretch of music. A cue follows the EMOTIONAL SEQUENCE, not
@@ -106,6 +116,24 @@ export const duckingSchema = z.object({
     .default(DEFAULT_DUCKING.minimumPauseSeconds),
 });
 
+// One subtitle, as Alpha/align measured it against the narration. Same shape
+// the align side writes to analysis/captions.json (see load-captions.ts) —
+// carried inside the plan so the browser preview and the headless render show
+// the identical text without either of them reading the file.
+export const captionSchema = z.object({
+  indice: z.number().int().nonnegative(),
+  t0: z.number().nonnegative(),
+  t1: z.number().nonnegative(),
+  texto: z.string(),
+  // Where the line breaks is decided by align/alpha_align/legendas.py (42
+  // chars, at most 2 lines, no word split — the Netflix/BBC convention), and
+  // that is the only place allowed to decide it. Optional because
+  // captions.json files written before 04/09/2026 don't carry the field;
+  // those fall back to letting the box wrap on its own.
+  linhas: z.array(z.string()).optional(),
+  confianca: z.number().min(0).max(1),
+});
+
 export const editPlanSchema = z.object({
   version: z.literal(1),
   fps: z.number().int().positive(),
@@ -126,6 +154,16 @@ export const editPlanSchema = z.object({
   narrationPauses: z
     .array(z.object({ start: z.number(), end: z.number() }))
     .default([]),
+  // Subtitles measured by Alpha/align. They were being generated and thrown
+  // away: align wrote analysis/captions.json "para o Studio/Remotion queimar
+  // no Short" and nothing here ever opened it (auditoria de 02/09/2026, achado
+  // nº 1). Timed against the NARRATION, so dragging a cut never moves them.
+  captions: z.array(captionSchema).default([]),
+  // Whether the render burns them in. Off by default on the full video —
+  // YouTube takes the .srt that align already writes, and burned-in text can't
+  // be turned off by the viewer. The Short is the case that needs them burned
+  // (it plays muted by default), and buildShortPlan turns it on.
+  burnCaptions: z.boolean().default(false),
 });
 
 export type AudioMode = z.infer<typeof audioModeSchema>;
@@ -140,4 +178,5 @@ export const isHardCut = (preset: TransitionPreset): boolean =>
 export type ClipPlan = z.infer<typeof clipPlanSchema>;
 export type MusicCue = z.infer<typeof musicCueSchema>;
 export type Ducking = z.infer<typeof duckingSchema>;
+export type Caption = z.infer<typeof captionSchema>;
 export type EditPlan = z.infer<typeof editPlanSchema>;
