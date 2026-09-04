@@ -13,11 +13,22 @@ renderiza continua sendo o `studio.py`; quem abre a rede continua sendo o
 
 DUAS REGRAS DE HONESTIDADE
 
-1. FASE SEM FERRAMENTA NÃO MENTE. A fase 3 depende de um MCP de geração de vídeo
-   que ainda não existe nesta máquina. Ela entrega os prompts prontos, diz o que
-   falta e fica em `aguardando você` — nunca em `pronta`. O mesmo vale para a
-   edição e para a publicação, que terminam nas mãos dele por decisão de
-   projeto (publicar é irreversível; ver `navegador.py`).
+1. FASE SEM FERRAMENTA NÃO MENTE. Se `executor` é `None`, a fase entrega o que
+   pode e fica em `aguardando você` — nunca em `pronta`. Atualizado em
+   04/09/2026: das seis, CINCO já têm executor real. A fase 3 (vídeo) foi a
+   última a cair — ficou parada de 21/08 a 04/09 não por falta de MCP, mas
+   porque a edição que a destravava foi recusada pelo classificador do modo
+   automático; a mudança esperou escrita em
+   `PENDENTE-FASE3-destravar-video.md` até ser aplicada. A fase 4 (edição)
+   tem executor desde 21/08/2026 (`_run_edicao` em pipeline.py, HTTP direto
+   contra o Studio), testado de verdade. A fase 5 (publicação) é a ÚNICA que
+   continua PERMANENTEMENTE sem executor, e por decisão de projeto, não por
+   limitação: publicar é irreversível, então o botão fica sempre com o
+   Samuel. Mesmo assim ela já escreve o pacote de SEO inteiro em segundo
+   plano (ver `comecar()`, ramo `n == 5`) — e desde 03/09 o
+   `local_commands._postar` sobe o arquivo pela API do YouTube quando ele
+   pede, sempre como NÃO LISTADO: existe, tem link, e só vira público quando
+   ele troca a visibilidade com a própria mão.
 2. O ESTADO VIVE EM DISCO, na pasta do projeto que o Studio já lê. O app pode
    ser reiniciado no meio de uma produção de dias, e "em que pé estamos" tem
    que responder certo depois disso.
@@ -69,26 +80,33 @@ FASES: tuple[dict, ...] = (
     {
         "n": 3, "nome": "Vídeos", "chave": "videos",
         "entrega": "os clipes de cada cena",
-        "executor": None,
+        # Destravada em 04/09/2026 — ver KAIROGEN_FERRAMENTAS_VIDEO no
+        # pipeline.py. O campo "falta" saiu junto: deixa de ser lido assim
+        # que existe executor, e deixar lá era guardar uma frase que o OMEGA
+        # nunca mais diria e que já não era verdade.
+        "executor": "videos",
         "precisa": "dos prompts da fase 2",
-        "falta": ("o MCP de geração de vídeo ainda não está ligado nesta "
-                  "máquina. Eu entrego os prompts prontos e você gera"),
     },
     {
         "n": 4, "nome": "Edição", "chave": "edicao",
         "entrega": "o vídeo montado, com narração e trilha",
-        "executor": None,
-        "precisa": "dos clipes da fase 3",
-        "falta": ("a montagem é sua no Studio. Eu preparo a narração, o mapa "
-                  "de edição e o plano de cortes"),
+        "executor": "edicao",
+        "precisa": ("dos clipes da fase 3 E da narração pronta (ElevenLabs) "
+                    "em public/audio — eu não gero narração sozinho"),
     },
     {
         "n": 5, "nome": "Publicação", "chave": "publicacao",
-        "entrega": "o pacote de SEO e o vídeo anexado na janela do YouTube",
+        "entrega": "o pacote de SEO e o vídeo no canal, como não listado",
         "executor": None,
         "precisa": "do vídeo montado da fase 4",
-        "falta": ("eu levo até o formulário e PARO. Publicar é irreversível, "
-                  "e o botão é seu"),
+        # Atualizado em 04/09/2026: a frase antiga ("eu levo até o formulário
+        # e PARO") descrevia o caminho do navegador, que continua valendo para
+        # Instagram/TikTok/X. Para o YouTube o caminho mudou — o Google bloqueia
+        # login em qualquer navegador automatizado, então virou API oficial, e
+        # o vídeo sobe NÃO LISTADO. O que não mudou é o que importa: o OMEGA
+        # nunca torna nada público sozinho.
+        "falta": ("eu subo como NÃO LISTADO e paro aí. Tornar público é "
+                  "irreversível, e esse botão é seu"),
     },
 )
 
@@ -270,6 +288,24 @@ def comecar(criatura: str, n: int, ui=None) -> str:
                 sobre=criatura)
             if material:
                 resposta += "\n\n" + material
+
+            # DESTRAVADO EM 21/08/2026: além de mostrar as regras do curso,
+            # dispara em segundo plano a escrita de verdade do pacote (título,
+            # descrição, tags, thumbnail gerada) — skill `postagem`, fase
+            # `seo` do pipeline. Continua PARANDO antes de publicar: a fase 5
+            # em si nunca ganha `executor` (fica None ali em cima, de
+            # propósito), e o Claude que escreve o pacote não tem NENHUMA
+            # ferramenta de navegador/upload no allowedTools — só imagem.
+            # "Publicar é seu" continua verdade, só o trabalho de PREPARAR
+            # deixou de ser manual.
+            from .pipeline import pipeline_criatura
+
+            aviso_seo = pipeline_criatura(
+                {"creature": criatura, "phase": "seo"})
+            resposta += (
+                f"\n\nTambém já iniciei o pacote de SEO e a thumbnail em "
+                f"segundo plano: {aviso_seo}"
+            )
         return resposta
 
     from .pipeline import pipeline_criatura

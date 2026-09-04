@@ -26,6 +26,7 @@ from . import apagar as _apagar
 from . import leitura as _leitura
 from . import imagens as _imagens
 from . import navegador as _navegador
+from . import youtube_upload as _youtube
 from .projetos import frase_de_ajuda as _ajuda_projeto
 from .projetos import resolver as _resolver_projeto
 
@@ -233,16 +234,21 @@ _LIMIAR_VERBO = 0.82
 _MINIMO_PARA_APROXIMAR = 5
 
 
-def _casar_verbo(palavra: str, aceitas: set[str]) -> str | None:
+def _casar_verbo(palavra: str, aceitas: set[str],
+                 aproximar: bool = True) -> str | None:
     """Casa a palavra falada com um verbo de comando, tolerando erro.
 
     O transcritor entrega "pesquiza", "montá", "analizar". Listar todas as
     grafias erradas é enxugar gelo; comparar por semelhança cobre as que
     ninguém previu — que são a maioria.
+
+    `aproximar=False` desliga a semelhança e exige a palavra exata. Serve para
+    quem precisa perguntar "esta palavra é EXATAMENTE um comando?" antes de
+    aceitar um parecido de outra lista — ver `_extrair_verbo_e_alvo`.
     """
     if palavra in aceitas:
         return palavra
-    if len(palavra) < _MINIMO_PARA_APROXIMAR:
+    if not aproximar or len(palavra) < _MINIMO_PARA_APROXIMAR:
         return None
     melhor, nota_melhor = None, 0.0
     for candidato in aceitas:
@@ -529,9 +535,9 @@ def _extrair_verbo_e_alvo(raw: str) -> tuple[str, str] | None:
     """
     palavras = raw.split()
 
-    def varrer(aceitas: set[str]) -> tuple[str, str] | None:
+    def varrer(aceitas: set[str], aproximar: bool = True) -> tuple[str, str] | None:
         for i, palavra in enumerate(palavras):
-            verbo = _casar_verbo(_norm(palavra), aceitas)
+            verbo = _casar_verbo(_norm(palavra), aceitas, aproximar)
             if verbo is None:
                 continue
             resto = palavras[i + 1:]
@@ -544,35 +550,81 @@ def _extrair_verbo_e_alvo(raw: str) -> tuple[str, str] | None:
                 return verbo, alvo
         return None
 
-    # O QUE ele quer ver ganha de COMO ("abrir a pesquisa da Medusa" é pedido
-    # de ver a pesquisa, não de abrir o navegador). Sem esta prioridade o
-    # verbo genérico, por vir antes na frase, sequestrava o comando.
-    return varrer(set(NOTE_ALIASES)) or varrer(_VERBOS_COM_ALVO)
+    # Duas prioridades, nesta ordem, e a segunda só existe por causa de um bug:
+    #
+    # 1. PALAVRA EXATA GANHA DE PARECIDA, sempre e em qualquer lista. Sem isto,
+    #    "pesquisar" (verbo, AGIR) casava por SEMELHANÇA com "pesquisa"
+    #    (substantivo, LER) já na primeira varredura — 0,94 contra o limiar de
+    #    0,82 — e "pesquisar Quimera" abria o dossiê em vez de produzi-lo,
+    #    respondendo "não entendi qual projeto é Quimera". Era a volta exata do
+    #    bug que o comentário lá embaixo (verbo = AGIR, substantivo = LER) diz
+    #    ter matado: a prioridade do substantivo o ressuscitou.
+    # 2. Entre EXATOS, o QUE ele quer ver ganha do COMO ("abrir a pesquisa da
+    #    Medusa" é pedido de ver a pesquisa, não de abrir o navegador). Sem
+    #    isto o verbo genérico, por vir antes na frase, sequestrava o comando.
+    #
+    # Só depois de esgotar os exatos é que a semelhança entra — e aí de uma vez
+    # sobre a lista inteira (`_VERBOS_COM_ALVO` já contém `NOTE_ALIASES`), para
+    # que "pesquizar" caia na palavra mais parecida de TODAS, e não na mais
+    # parecida da primeira lista que por acaso foi varrida antes.
+    return (
+        varrer(set(NOTE_ALIASES), aproximar=False)
+        or varrer(_VERBOS_COM_ALVO, aproximar=False)
+        or varrer(_VERBOS_COM_ALVO)
+    )
 
 
 
 def _postar(pedido: str, ui) -> str:
-    """"postar a Medusa no youtube" -> leva o render até o formulário.
+    """"postar a Medusa no youtube" -> leva o render até o formulário
+    (Instagram/TikTok/X) ou sobe direto pela API (YouTube — ver
+    youtube_upload.py; o navegador não serve pra essa rede, o Google
+    bloqueia login de qualquer Chromium automatizado).
 
-    O OMEGA para no formulário de propósito: publicar é irreversível e um
-    comando de voz mal transcrito não pode subir vídeo no canal sozinho.
+    Em ambos os casos o OMEGA para antes do público de verdade: no
+    navegador, não clica em publicar; no YouTube, sobe sempre como não
+    listado. Publicar é irreversível e um comando de voz mal transcrito não
+    pode tornar vídeo público sozinho.
     """
-    baixo = _norm(pedido)
+    # Título vem do texto ORIGINAL (mantém maiúsculas/acentos) — só é usado
+    # no caminho do YouTube, que exige título. "titulo"/"título" aceita as
+    # duas grafias porque o reconhecimento de voz varia.
+    achou_titulo = re.search(r"(?:com\s+o\s+)?t[íi]tulo\s+(.+)$", pedido, flags=re.I)
+    titulo_explicito = achou_titulo.group(1).strip() if achou_titulo else ""
+    pedido_sem_titulo = pedido[: achou_titulo.start()] if achou_titulo else pedido
+
+    baixo = _norm(pedido_sem_titulo)
+    # PALAVRA INTEIRA, não trecho. "x" solto casa dentro de meia língua
+    # portuguesa, e sem a borda "postar a esfinge" escolheria rede sozinho.
     rede = next((r for r in ("youtube", "instagram", "tiktok", "twitter", "x")
-                 if r in baixo), None)
+                 if re.search(rf"\b{re.escape(r)}\b", baixo)), None)
     if rede is None:
         return ("Em qual rede, senhor? YouTube, Instagram, TikTok ou X. "
                 "Diga por exemplo: postar a Medusa no YouTube.")
     # O que sobra depois de tirar a rede e as preposições é o nome do projeto.
+    #
+    # `\b` NÃO é decoração: sem ele o `re.sub` comia a preposição DENTRO do
+    # nome da criatura — "minotauro no youtube" virava o projeto "mi tauro" e
+    # "anansi" virava "a nsi", e o OMEGA respondia "não achei vídeo
+    # renderizado" para um render que existia. Passava despercebido porque
+    # "medusa", o caso de teste de sempre, não contém nenhuma delas.
     criatura = baixo
     for termo in (rede, "no", "na", "em", "para", "pro"):
-        criatura = re.sub(rf"{re.escape(termo)}", " ", criatura)
+        criatura = re.sub(rf"\b{re.escape(termo)}\b", " ", criatura)
     criatura = " ".join(criatura.split())
 
     caminho = _latest_render(criatura) if criatura else None
     if caminho is None:
         return (f"Não achei vídeo renderizado para {criatura or 'esse projeto'}. "
                 "Monte o vídeo antes de postar.")
+
+    if rede == "youtube":
+        titulo = titulo_explicito or criatura.title()
+        resultado = _youtube.enviar(str(caminho), titulo)
+        if not titulo_explicito:
+            resultado += " Usei o nome do projeto como título — troque no Studio se quiser outro."
+        return resultado
+
     return _navegador.preparar_postagem(rede, str(caminho), ui=ui)
 
 
@@ -595,6 +647,35 @@ def _read_note(creature: str, note: str) -> tuple[str, str] | str:
         f"Ainda não existe {rotulos[note]} para {nome}. "
         f"Peça a pesquisa primeiro (ou gere pelo Claude)."
     )
+
+
+# Seções do dossiê que valem a pena OUVIR. O resto (tabela de afirmação por
+# afirmação, fontes, nota metodológica) é aparato de apuração: útil na tela,
+# caro e maçante em voz — pedido do Samuel depois de ouvir um dossiê inteiro
+# ser lido para decidir a história de um vídeo.
+_SECOES_LEITURA_DOSSIE = (
+    "RECOMENDAÇÃO DE USO",
+    "NARRATIVA LINEAR RICA",
+    "SUGESTÃO DE HISTÓRIA PARA PRODUÇÃO",
+)
+
+
+def _resumo_dossie(conteudo: str) -> str:
+    """Recorta o dossiê para as seções narráveis. Sem elas, devolve tudo."""
+    blocos: list[str] = []
+    atual: list[str] | None = None
+    for linha in conteudo.splitlines():
+        if linha.startswith("## "):
+            if atual is not None:
+                blocos.append("\n".join(atual).strip())
+            titulo = linha[3:].strip()
+            atual = [linha] if any(alvo in titulo.upper() for alvo in _SECOES_LEITURA_DOSSIE) else None
+            continue
+        if atual is not None:
+            atual.append(linha)
+    if atual is not None:
+        blocos.append("\n".join(atual).strip())
+    return "\n\n".join(b for b in blocos if b) or conteudo
 
 
 def _latest_render(creature: str) -> Path | None:
@@ -1044,7 +1125,7 @@ def handle(text: str, ui) -> str | None:
             return resultado
         titulo, conteudo = resultado
         ui.show_document(titulo, conteudo)
-        return _leitura.ler(titulo, conteudo, ui,
+        return _leitura.ler(titulo, _resumo_dossie(conteudo), ui,
                             bonita=verbo in _VERBOS_DE_NARRACAO)
 
     if verbo in NOTE_ALIASES:
@@ -1057,7 +1138,8 @@ def handle(text: str, ui) -> str | None:
         # "ler a pesquisa da Medusa" exibe E lê; "pesquisa da Medusa" só
         # exibe. A intenção de ouvir vem do verbo dito antes da palavra-chave.
         if _quer_ouvir(raw):
-            return _leitura.ler(titulo, conteudo, ui, bonita=_quer_narrar(raw))
+            falado = _resumo_dossie(conteudo) if nota == "dossie" else conteudo
+            return _leitura.ler(titulo, falado, ui, bonita=_quer_narrar(raw))
         return f"{titulo} na tela."
 
     if verbo in ("postar", "posta", "publicar", "publica", "subir", "sobe"):
