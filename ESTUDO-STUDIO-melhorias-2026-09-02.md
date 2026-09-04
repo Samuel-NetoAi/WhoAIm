@@ -15,8 +15,8 @@
 
 | # | Achado | Gravidade |
 |---|---|---|
-| 1 | **As legendas já são geradas e nunca são usadas.** O `align` escreve `captions.json` "para o Studio/Remotion queimar no Short" — e o Studio não lê esse arquivo em lugar nenhum | **Alta — trabalho já pago, jogado fora** |
-| 2 | **O Short não é 9:16.** `buildShortPlan` herda `width/height` do plano cheio; é um corte 16:9 mais curto | **Alta — o formato está errado** |
+| 1 | ✅ **RESOLVIDO 04/09/2026.** ~~As legendas já são geradas e nunca são usadas.~~ O `align` escreve `captions.json` "para o Studio/Remotion queimar no Short" — e o Studio não lê esse arquivo em lugar nenhum | **Alta — trabalho já pago, jogado fora** |
+| 2 | ✅ **RESOLVIDO 04/09/2026.** ~~O Short não é 9:16.~~ `buildShortPlan` herda `width/height` do plano cheio; é um corte 16:9 mais curto | **Alta — o formato está errado** |
 | 3 | **O upscale roda, mas não é upscale de IA.** É `scale=lanczos` — não inventa detalhe nenhum. O próprio comentário do código admite | Média |
 | 4 | **A ordem upscale/interpolação está invertida** em relação à única orientação que achei | Média — testar, não virar no escuro |
 | 5 | **O ASR do alinhador é Vosk, descrito no próprio código como "qualidade medíocre"** — e o `faster-whisper` passou a funcionar nesta máquina hoje | Média — troca barata, ganho direto |
@@ -382,3 +382,39 @@ saídas — sem interpolação, `minterpolate`, e (se instalado) RIFE. Olhar.
    escala uma única vez. Não há base para comparar nosso baseline com nada.
 8. **A API exata do `@remotion/captions`** na versão 4.0.495 — a documentação não
    abriu a lista completa. Conferir antes de instalar.
+
+
+---
+
+## Fechamento parcial — 04/09/2026
+
+**Achados 1 e 2 (os dois de gravidade alta) resolvidos e verificados com render
+real**, não só com typecheck: projeto de teste com dois clipes da Medusa,
+narração cortada em 24 s e um `captions.json` sintético no formato exato do
+align. Saída medida com `ffprobe`: **1080x1920**, legendas queimadas e legíveis
+em quadro claro e escuro.
+
+- **Legendas:** `lib/alignment/load-captions.ts` lê o arquivo, elas viajam
+  dentro do `EditPlan` (`captions` + `burnCaptions`), e `remotion/Captions.tsx`
+  desenha. Ligado no Short, **desligado no vídeo cheio** de propósito — o
+  YouTube recebe o `.srt` que o align já escreve, e legenda queimada o
+  espectador não desliga.
+- **Short 9:16:** `SHORT_RESOLUTION = 1080x1920` em `output-resolution.ts`, com
+  o recorte feito na composição (`object-fit:cover` + `cropX` por clipe), como
+  a §C3 recomendava — sem reencode.
+
+**Dois defeitos que só o render pegou** (nenhum teste pegaria):
+
+1. A quebra de 42 caracteres do align é para quadro LARGO. No 9:16 ela não
+   cabe e cada linha quebrava de novo, com palavra órfã. No vertical o texto
+   agora reflui como parágrafo único.
+2. O cache do bundle do Remotion é chaveado só no `publicDir` — editar a
+   composição não invalidava nada, e o mesmo conserto renderizou frame
+   idêntico byte a byte duas vezes. Em desenvolvimento o cache agora é pulado.
+
+**O que continua aberto nesta lista:** §C2 (cartela de local/ano), §C4 (ASR
+Vosk → faster-whisper), §C5 (bitrate/CRF no encode final), §C6 (Real-ESRGAN
+como opção), §C7 (a pergunta da interpolação) e todo o §D de interface. E o
+`cropX` continua 0,5 em tudo: o recorte é centralizado, não segue o
+personagem — num dos frames do teste o rosto saiu descentralizado, que é
+exatamente o caso que a análise de reenquadramento resolveria.
