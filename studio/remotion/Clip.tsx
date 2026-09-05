@@ -3,11 +3,11 @@ import {
   AbsoluteFill,
   Freeze,
   interpolate,
+  OffthreadVideo,
   staticFile,
   useCurrentFrame,
   useVideoConfig,
 } from "remotion";
-import { Video } from "@remotion/media";
 import type { AudioMode, FilterPreset } from "../lib/edit-plan/schema";
 import { FILTER_PRESETS } from "./filters";
 
@@ -73,11 +73,35 @@ export const Clip: React.FC<{
       }}
     >
       <Freeze frame={playFrames - 1} active={(f) => f >= playFrames}>
-        <Video
+        {/* OffthreadVideo (core Remotion, decodes with FFmpeg), NOT <Video>
+            from @remotion/media (decodes with WebCodecs in headless Chromium).
+            That choice is the fix for the render hang that blocked the clip
+            enhancement pipeline from 19/08 to 04/09/2026, and it was settled
+            by measurement, not by preference — same clips, same plan, same
+            machine, only the decoder swapped:
+
+              enhanced clips (1882x1080, 60fps, High L4.2, 19 MB)
+                <Video>          0% progress for 290s, then
+                                 "Timeout while extracting frame at 0.13sec"
+                <OffthreadVideo> done in ~60s, progress climbing normally
+
+              raw clips (864x496, 24fps, 5 MB) — the case that already worked
+                <Video>          36s
+                <OffthreadVideo> 40s
+
+            So WebCodecs costs ~11% less on footage it can decode, and hangs
+            outright on footage it cannot — with no error until the mount
+            timeout fires, five minutes later. One path that always works beats
+            a faster one that silently stalls; the 11% is the premium paid for
+            that, knowingly.
+
+            @remotion/media was never a documented decision here — it arrived
+            in a bulk snapshot commit — and Remotion's own docs describe the
+            WebCodecs packages as being phased out in favour of Mediabunny. */}
+        <OffthreadVideo
           src={src}
           volume={volumeForAudioMode(audioMode)}
           trimAfter={playFrames}
-          objectFit="cover"
           // `cover` already fills a frame of a different aspect by cropping;
           // objectPosition is what decides WHICH part survives the crop. It
           // only has any effect when the aspects differ (the 9:16 Short out of
@@ -86,6 +110,7 @@ export const Clip: React.FC<{
           style={{
             width,
             height,
+            objectFit: "cover",
             objectPosition: `${cropX * 100}% 50%`,
           }}
         />

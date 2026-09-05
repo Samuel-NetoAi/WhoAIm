@@ -1,4 +1,39 @@
-# Pendente: Remotion trava ao renderizar clipes melhorados (upscale/interpolação)
+# ~~Pendente~~ RESOLVIDO em 04/09/2026: Remotion travava ao renderizar clipes melhorados
+
+> ✅ **RESOLVIDO.** A causa era o **decodificador**, não o timeout, não o
+> bitrate, não o perfil do H.264. O `remotion/Clip.tsx` usava `<Video>` do
+> `@remotion/media`, que decodifica por **WebCodecs** dentro do Chromium
+> headless e **não dá conta do encode que o `enhance-clips.ts` produz**.
+> Trocado pelo `<OffthreadVideo>` do `remotion` puro, que decodifica por
+> **FFmpeg**.
+>
+> **Medido no mesmo dia, mesma máquina, mesmos clipes, só trocando o
+> componente:**
+>
+> | clipes | `<Video>` (WebCodecs) | `<OffthreadVideo>` (FFmpeg) |
+> |---|---|---|
+> | **melhorados** (1882×1080, 60 fps, High L4.2, 19 MB) | 290 s a 0%, depois `Timeout while extracting frame at 0.13sec` | **60 s, done** |
+> | **crus** (864×496, 24 fps, 5 MB) | 36 s | 40 s |
+>
+> Ou seja: o WebCodecs é ~11% mais rápido no material que ele consegue
+> decodificar, e trava sem erro nenhum no que não consegue — o erro só
+> aparece cinco minutos depois, quando o timeout de montagem estoura. Um
+> caminho que sempre funciona vale mais que um mais rápido que trava calado.
+>
+> Áudio conferido no resultado (aac estéreo, mean_volume −17,8 dB) e quadro
+> extraído e olhado: imagem íntegra em 1882×1080.
+>
+> **O que isto DESTRAVA:** o painel "1.5. Melhorar clipes" do Studio agora
+> funciona de ponta a ponta, e a fase 4 do OMEGA pode passar a chamar o
+> `enhance-clips` — mas **isso continua sendo decisão do Samuel, não minha**,
+> porque a interpolação para 60 fps custa ~79 s por clipe de 15 s (~26 min de
+> CPU num vídeo de 10 min) e o §C7 do `ESTUDO-STUDIO` registra que ainda não
+> foi respondido se queremos 60 fps. O que mudou é que agora é uma ESCOLHA, e
+> não um bug. O upscale sozinho (Lanczos, rápido) não tem essa dúvida.
+
+---
+
+## Registro original (19-21/08/2026)
 
 **19-20/08/2026, durante o PLANO B (upscale + interpolação local no Studio).** Depois de melhorar
 clipes de teste (480p → 1882×1080, 24fps → 60fps), o render final do Studio **trava** —

@@ -644,12 +644,21 @@ def _run_edicao(creature: str) -> None:
     pasta que `getProjectPaths` do Studio lê) — não precisa passar pela rota
     de upload multipart.
 
-    NÃO chama `enhance-clips` (upscale/interpolação) por padrão: testado em
-    19-20/08/2026 contra um clipe melhorado (1080p/60fps), o Remotion trava
-    tentando extrair o primeiro frame — trava mesmo, não lento, reproduzido
-    duas vezes com timeout de até 5 minutos. Causa raiz ainda não encontrada.
-    Renderiza os clipes brutos da fase 3 até isso ser resolvido — ver
-    PENDENTE-FASE4-render-hang.md.
+    NÃO chama `enhance-clips` (upscale/interpolação) por padrão — e desde
+    04/09/2026 isso deixou de ser limitação e virou ESCOLHA, que é do Samuel.
+
+    O travamento que impedia era do decodificador: o Remotion decodificava o
+    clipe melhorado por WebCodecs e travava sem erro até estourar o timeout.
+    Consertado (Clip.tsx passou a usar OffthreadVideo/FFmpeg), medido e
+    verificado — ver PENDENTE-FASE4-render-hang.md.
+
+    O que ainda não foi respondido é se QUEREMOS a melhoria no automático: a
+    interpolação para 60 fps custa ~79 s de CPU por clipe de 15 s (~26 min num
+    vídeo de 10 min) e o §C7 do ESTUDO-STUDIO registra que nem sabemos se 60
+    fps melhora vídeo gerado por IA. O upscale sozinho (Lanczos, rápido) não
+    tem essa dúvida. Enquanto ele não decidir, a fase 4 renderiza os clipes
+    brutos, que é o comportamento testado — e o painel "1.5. Melhorar clipes"
+    do Studio faz a melhoria manual, agora de ponta a ponta.
     """
     inicio = time.monotonic()
     project = _project_dir(creature)
