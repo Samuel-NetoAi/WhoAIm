@@ -6,6 +6,7 @@ export type ProjectPaths = {
   projectPath: string;
   videosDir: string;
   audioDir: string;
+  sourceDir: string;
   editPlanFile: string;
   analysisDir: string;
   probeFile: string;
@@ -29,6 +30,11 @@ export const getProjectPaths = (projectId: string): ProjectPaths => {
     projectPath,
     videosDir: path.join(projectPath, "public", "videos"),
     audioDir: path.join(projectPath, "public", "audio"),
+    // Where a full-episode upload is kept after being split into numbered
+    // clips (see split-video.ts) — not read by the render pipeline itself,
+    // just a durable copy so the project can be re-split at a different
+    // clip length later without re-uploading.
+    sourceDir: path.join(projectPath, "source"),
     editPlanFile: path.join(projectPath, "edit-plan.json"),
     analysisDir: path.join(projectPath, "analysis"),
     probeFile: path.join(projectPath, "analysis", "probe.json"),

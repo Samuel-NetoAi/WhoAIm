@@ -360,6 +360,18 @@ video {
   font-size: 0.85rem;
   color: var(--text-dim);
   white-space: nowrap;
+  /* It's a <button> (opens the isolated-cut preview) styled to still read as
+     the plain label it used to be. */
+  background: none;
+  border: none;
+  padding: 0;
+  text-align: left;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.scene-grid .scene-label:hover {
+  color: var(--accent);
 }
 
 /* Diagnóstico da análise: o que o scenes.json, o alinhamento e o catálogo de

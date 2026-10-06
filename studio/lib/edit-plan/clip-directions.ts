@@ -6,7 +6,12 @@ import type { SceneDirection } from "../scenes/schema";
 // about — that clip keeps the defaults.
 export type ClipDirections = (SceneDirection | null)[];
 
-type ProbedClip = { id: string; file: string; durationInSeconds: number };
+type ProbedClip = {
+  id: string;
+  file: string;
+  durationInSeconds: number;
+  energyScore?: number;
+};
 
 // Single place where "what the skill decided" meets "what the plan builds".
 // Without a scenes.json every clip falls back to no filter and a dissolve,
@@ -23,5 +28,6 @@ export const toBoundaryClips = (
       durationInSeconds: clip.durationInSeconds,
       filter: direction?.filter,
       transitionFromPrevious: direction?.transitionFromPrevious,
+      energyScore: clip.energyScore,
     };
   });

@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { existsSync, renameSync, unlinkSync } from "node:fs";
 import path from "node:path";
 import { getMediaDuration } from "@/lib/media/get-media-duration";
+import { spawnRemotion } from "@/lib/media/run-ffmpeg";
 
 export type EnhancementPlan = {
   // 24/30fps -> 60fps motion-compensated interpolation (minterpolate). CPU-bound
@@ -83,7 +84,7 @@ const runFfmpeg = (
   new Promise((resolve, reject) => {
     const child = useFullBinary
       ? spawn(FULL_FFMPEG, args, { cwd: process.cwd() })
-      : spawn("npx", args, { cwd: process.cwd(), shell: true });
+      : spawnRemotion(args);
     let stderr = "";
     child.stderr.on("data", (chunk) => {
       const text = chunk.toString();
@@ -158,7 +159,7 @@ export const postProcess = async (
 
   const outputPath = postProcessOutputPath(inputPath);
   const args = [
-    ...(useFullBinary ? [] : ["remotion", "ffmpeg"]),
+    ...(useFullBinary ? [] : ["ffmpeg"]),
     "-y",
     "-i",
     inputPath,
@@ -213,7 +214,7 @@ export const postProcess = async (
     `${path.parse(outputPath).name}-retimed${path.extname(outputPath)}`,
   );
   const retimeArgs = [
-    ...(useFullBinary ? [] : ["remotion", "ffmpeg"]),
+    ...(useFullBinary ? [] : ["ffmpeg"]),
     "-y",
     "-i",
     outputPath,

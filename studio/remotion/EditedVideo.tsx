@@ -18,6 +18,17 @@ export const EditedVideo: React.FC<{
     ? `${mediaBaseUrl}/${narration.file}`
     : staticFile(narration.file);
 
+  // A Short built from a mid-episode window sets narration.startInSeconds
+  // instead of slicing a new audio file — trim the same source narration
+  // file to [startInSeconds, startInSeconds + durationInSeconds) instead.
+  // trimAfter is an ABSOLUTE frame offset into the source (not a duration),
+  // matching how Clip.tsx already trims each video with trimAfter alone.
+  const narrationTrimBeforeFrames = Math.round(
+    (narration.startInSeconds ?? 0) * fps,
+  );
+  const narrationTrimAfterFrames =
+    narrationTrimBeforeFrames + Math.round(narration.durationInSeconds * fps);
+
   // Boundaries between clips, in frames — cutPoints if the plan has them
   // (it always does once analyzed), else derived from each clip's own start.
   const boundarySeconds =
@@ -100,7 +111,12 @@ export const EditedVideo: React.FC<{
       {editPlan.burnCaptions && (
         <Captions captions={editPlan.captions ?? []} />
       )}
-      <Audio src={narrationSrc} volume={narrationVolume} />
+      <Audio
+        src={narrationSrc}
+        volume={narrationVolume}
+        trimBefore={narrationTrimBeforeFrames}
+        trimAfter={narrationTrimAfterFrames}
+      />
       <MusicTrack
         music={editPlan.music ?? []}
         ducking={editPlan.ducking}

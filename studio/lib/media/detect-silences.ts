@@ -1,27 +1,6 @@
-import { spawn } from "node:child_process";
+import { DEV_NULL, runRemotionFfmpeg } from "./run-ffmpeg";
 
 export type Silence = { start: number; end: number };
-
-const DEV_NULL = process.platform === "win32" ? "NUL" : "/dev/null";
-
-// Runs `npx remotion ffmpeg`, which uses Remotion's bundled ffmpeg binary —
-// nothing needs to be installed on the machine. ffmpeg writes filter output
-// (loudnorm/silencedetect) to stderr regardless of exit code, so stdout is
-// discarded and stderr is what we parse.
-const runRemotionFfmpeg = (args: string[]): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    const child = spawn("npx", ["remotion", "ffmpeg", ...args], {
-      cwd: process.cwd(),
-      shell: true,
-    });
-    let stderr = "";
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk.toString();
-    });
-    child.on("error", reject);
-    child.on("close", () => resolve(stderr));
-  });
-};
 
 const parseLoudnormThreshold = (output: string): number => {
   const match = output.match(/\{[\s\S]*?"input_thresh"[\s\S]*?\}/);
