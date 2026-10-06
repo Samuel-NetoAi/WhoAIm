@@ -23,6 +23,20 @@ documento longo e a nota já respondia, você gastou contexto à toa.
 | escrever prompt de Seedance | `_registros\HIGGSFIELD.md` | `GUIA-PROMPT-SEEDANCE-2-5.md` |
 | Higgsfield Academy, padrões da coleção | `_registros\HIGGSFIELD.md` | `ESTUDO-ACADEMY-HIGGSFIELD-completo.md` |
 | publicar vídeo, upload, API do YouTube | `_registros\YOUTUBE.md` | a skill `postagem` |
+| dirigir cena, ler roteiro, padrão de plano | `_registros\DIRECAO.md` | as referências da skill `whoiam` |
+| lore, dossiê ou material de uma criatura | — | **`C:\Ai-Project\Criaturas\<Nome>\`** — ver abaixo |
+
+### ⚠️ O material das criaturas NÃO fica neste repositório
+
+`C:\Ai-Project\Criaturas\` guarda 14 criaturas (Cthulhu, Medusa, Baba Yaga, Djin, Sobek,
+Umibozu, Dullahan, Dríade, Orphanim, Besta, IT, Dragões Ocidentais…). Cada uma tem
+`<Nome>\<nome>-video\notes\` com **`dossie.md`** (a lore apurada), `biblia-personagens.md`,
+`roteiro.md`, `storyboards.md`, `prompts.md` e `fases.json` (em que fase está).
+
+**Procurar lore só em `D:\Agentes` e no Omega dá falso negativo** — foi exatamente o erro
+cometido em 2026-09-08, quando afirmei que o Cthulhu nunca tinha sido pesquisado.
+⚫ **Roteiro que estiver lá é ANTERIOR ao modelo de cena atual — serve de base, não é produto
+final** (decisão do Samuel, 2026-09-08).
 | edição, render, Studio, legendas | — *(sem nota ainda)* | `ESTUDO-STUDIO-melhorias-2026-09-02.md` |
 | Alpha / Telegram / 2FA | `_registros\ALPHA.md` | `PLANO-ALPHA.md` |
 | regras que valem para todos os agentes | `_registros\CONSTELACAO.md` | — |

@@ -299,14 +299,30 @@ Notas de compatibilidade **[A CONFIRMAR no primeiro uso]**:
 
 ## 6. GANHOS TÉCNICOS NOVOS (e o que eles aposentam)
 
-**`generate_audio: false` — o fim da mendicância anti-trilha.**
-A regra "todo prompt Seedance inclui *No music. No score. No soundtrack.*" existe porque o Seedance
-inseria trilha por conta própria (caso Medusa/águia). No Higgsfield isso é um **parâmetro**: áudio
-desligado é áudio desligado. Consequência: o vídeo vem **mudo** — e o `[AUDIO]` de SFX diegéticos do
-prompt deixa de produzir qualquer coisa. Decisão que isso força (ver `pos-producao.md`): a camada de
-SFX passa a ser montada na pós, com efeitos da Biblioteca de áudio do YouTube (centenas, gratuitos)
-ou gerados. **Manter a frase negativa no texto do prompt** de qualquer forma, como cinto e
-suspensório para gerações feitas na web onde o parâmetro pode passar batido.
+**`generate_audio` — CORRIGIDO em 2026-09-10, substitui o parágrafo original desta seção.**
+
+⚫ **Decisão do Samuel (2026-09-10): `generate_audio: true`, sempre.** O motivo é estrutural, não
+estético: **o Cinema Studio não tem nenhum outro jeito de produzir SFX de tela** — passos, vidro
+quebrando, atrito de material, água, impacto. Isso não é coisa que se monte na pós com biblioteca
+genérica do YouTube sem custar sincronismo e verossimilhança; é o próprio modelo que precisa gerar,
+porque só ele sabe o timing exato do que está acontecendo em quadro.
+
+**O que isso muda na prática:**
+- `generate_audio: true` em toda geração de vídeo, sem exceção.
+- A supressão continua existindo, mas só pra **música/trilha** — nunca para SFX. Toda geração
+  carrega no texto do prompt uma frase negativa específica: *"No music. No score. No soundtrack."*
+  — e SÓ isso. Nunca escrever "no audio" ou "no sound" no prompt, porque isso mata o SFX junto.
+- O `[AUDIO]` de SFX diegéticos do prompt (passos, vidro, atrito, impacto, água) volta a valer e a
+  produzir som de verdade — descrever o som específico da cena no prompt continua sendo trabalho
+  nosso, exatamente como antes de existir o parâmetro.
+
+**Registro do que existia antes, pra não se repetir o erro de leitura:** a versão anterior desta
+seção (escrita em agosto/2026) mandava `generate_audio: false` e mover todo SFX pra pós — a
+motivação citada era um caso antigo de trilha indesejada inserida pelo Seedance (Medusa/águia).
+Essa regra **nunca foi corrigida por escrito em lugar nenhum do repositório** — a mudança só existia
+faladada, e por isso a IA gerando pelo MCP em 2026-09-10 seguiu a versão errada e desperdiçou
+crédito numa geração muda que teve que ser refeita. Lição: **quando uma regra muda, ela precisa ser
+escrita aqui na hora**, não só combinada em conversa — senão a próxima leitura pega a versão velha.
 
 **`end_image` — a hipótese H4 virou recurso nativo.**
 Frame inicial + frame final numa mesma geração. É o caminho para metamorfose, deslocamento grande e
