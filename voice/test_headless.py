@@ -1,6 +1,14 @@
 """Teste do Omega Voice sem microfone: valida chave, protocolo Realtime,
 declaração de tools, round-trip de function call com o Studio REAL e
 resposta final em texto. Rodar: python test_headless.py
+
+NÃO É TESTE DE SUÍTE, apesar do nome `test_`: abre WebSocket na Realtime da
+OpenAI, gasta crédito e depende do Studio no ar. O `unittest discover` até
+IMPORTA este arquivo (o nome casa com o padrão), então o módulo tem que ser
+inerte ao ser importado — é por isso que nada aqui roda fora de `run_test()`.
+Antes havia um `make_tool_executor` solto no topo, e o import de uma função
+que não existe mais (`load_api_key`, virou `load_config` quando a chave saiu
+de função própria para o config inteiro) derrubava a coleta da suíte inteira.
 """
 
 from __future__ import annotations
@@ -10,7 +18,7 @@ import json
 
 import websockets
 
-from main import INSTRUCTIONS, TOOLS, make_tool_executor, load_api_key
+from main import INSTRUCTIONS, TOOLS, make_tool_executor, load_config
 from realtime_engine import REALTIME_URL
 
 
@@ -30,11 +38,14 @@ class _FakeUI:
         self.shown.append("hud")
 
 
-execute_tool = make_tool_executor(_FakeUI())
-
-
 async def run_test() -> None:
-    key = load_api_key()
+    execute_tool = make_tool_executor(_FakeUI())
+    key = load_config().get("openai_api_key", "")
+    if not key:
+        raise SystemExit(
+            "Sem openai_api_key em config/api_keys.json — este teste é da "
+            "Realtime da OpenAI. O motor padrão hoje é o Gemini Live."
+        )
     headers = {"Authorization": f"Bearer {key}"}
     tool_calls: list[str] = []
     final_text: list[str] = []

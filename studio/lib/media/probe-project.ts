@@ -45,20 +45,28 @@ export type ProjectProbe = {
 // Clips are named "1.mp4", "2.mp4", ... — sort numerically, not lexically
 // ("10.mp4" must come after "9.mp4", not after "1.mp4"). Gaps (missing
 // numbers) are expected and simply mean fewer clips than intended scenes.
-const numericThenAlpha = (a: string, b: string): number => {
+// Exported so lib/media/enhance-clips.ts lists clips in the same order
+// instead of re-deriving its own sort.
+export const numericThenAlpha = (a: string, b: string): number => {
   const na = parseInt(a, 10);
   const nb = parseInt(b, 10);
   if (!Number.isNaN(na) && !Number.isNaN(nb)) return na - nb;
   return a.localeCompare(b);
 };
 
+// Sorted list of video filenames (not full paths) in a directory. Shared by
+// probeProject and the clip-enhancement pipeline so "what counts as a clip,
+// in what order" only lives in one place.
+export const listVideoFiles = (videosDir: string): string[] =>
+  readdirSync(videosDir)
+    .filter((f) => VIDEO_EXTENSIONS.has(path.extname(f).toLowerCase()))
+    .sort((a, b) => numericThenAlpha(path.parse(a).name, path.parse(b).name));
+
 export const probeProject = async (
   videosDir: string,
   audioDir: string,
 ): Promise<ProjectProbe> => {
-  const videoFiles = readdirSync(videosDir)
-    .filter((f) => VIDEO_EXTENSIONS.has(path.extname(f).toLowerCase()))
-    .sort((a, b) => numericThenAlpha(path.parse(a).name, path.parse(b).name));
+  const videoFiles = listVideoFiles(videosDir);
 
   if (videoFiles.length === 0) {
     throw new Error(`No video clips found in ${videosDir}`);

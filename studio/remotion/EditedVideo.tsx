@@ -3,6 +3,7 @@ import { AbsoluteFill, staticFile } from "remotion";
 import { Audio } from "@remotion/media";
 import { TransitionSeries, linearTiming } from "@remotion/transitions";
 import { isHardCut, type EditPlan } from "../lib/edit-plan/schema";
+import { Captions } from "./Captions";
 import { Clip } from "./Clip";
 import { presentationFor } from "./transitions";
 import { MusicTrack } from "./MusicTrack";
@@ -73,6 +74,7 @@ export const EditedVideo: React.FC<{
                 height={height}
                 audioMode={clip.audioMode}
                 filter={clip.filter}
+                cropX={clip.cropX}
               />
             </TransitionSeries.Sequence>
           );
@@ -103,6 +105,12 @@ export const EditedVideo: React.FC<{
           return [sequence, transition];
         })}
       </TransitionSeries>
+      {/* Above the clips and below nothing: burned-in text is the last thing
+          drawn. Timed against the narration, so it never moves when a cut is
+          dragged in the timeline. */}
+      {editPlan.burnCaptions && (
+        <Captions captions={editPlan.captions ?? []} />
+      )}
       <Audio
         src={narrationSrc}
         volume={narrationVolume}

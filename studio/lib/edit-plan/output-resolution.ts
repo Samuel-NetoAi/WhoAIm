@@ -15,8 +15,17 @@
 export type Resolution = { width: number; height: number };
 
 // Short side of the target frame. 1080 is the lowest resolution YouTube still
-// treats as "HD" for bitrate/codec purposes.
-const MINIMUM_SHORT_SIDE = 1080;
+// treats as "HD" for bitrate/codec purposes. Exported so the clip-enhancement
+// pipeline (lib/media/enhance-clips.ts) targets the exact same number instead
+// of duplicating it — "what counts as HD" lives in one place.
+export const MINIMUM_SHORT_SIDE = 1080;
+
+// The vertical frame every short-form feed (Shorts, Reels, TikTok) expects.
+// Until 04/09/2026 the Short inherited width/height from the full plan, so it
+// was a 16:9 cut that merely stopped earlier — the audit of 02/09 filed it as
+// "o formato está errado", and it was: a 16:9 video in a 9:16 feed is shown
+// letterboxed into roughly a third of the screen.
+export const SHORT_RESOLUTION: Resolution = { width: 1080, height: 1920 };
 
 // h264 requires even dimensions; an odd width fails the encode outright.
 const toEven = (value: number): number => Math.round(value / 2) * 2;

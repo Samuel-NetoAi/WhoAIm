@@ -2,6 +2,7 @@ import {
   DEFAULT_DUCKING,
   isHardCut,
   type AudioMode,
+  type Caption,
   type Ducking,
   type EditPlan,
   type FilterPreset,
@@ -17,6 +18,7 @@ export type BoundaryClip = {
   filter?: FilterPreset;
   transitionFromPrevious?: TransitionPreset;
   transitionFrames?: number;
+  cropX?: number;
   energyScore?: number;
 };
 
@@ -34,6 +36,12 @@ export type BoundaryExtras = {
   music?: MusicCue[];
   ducking?: Ducking;
   narrationPauses?: { start: number; end: number }[];
+  // Captions travel through untouched, unlike music cues, which restretch.
+  // The difference is not an oversight: a cue is defined by WHICH SCENES it
+  // covers, so moving a cut moves it; a caption is defined by a measured
+  // moment in the narration, and the narration does not move when a cut does.
+  captions?: Caption[];
+  burnCaptions?: boolean;
 };
 
 // A cue knows which scenes it covers, so moving a cut moves the music with it:
@@ -121,6 +129,7 @@ export const applyBoundaries = (
     transitionFromPrevious: clip.transitionFromPrevious ?? "dissolve",
     // Persist the clamped value, so what the plan says is what renders.
     transitionFrames: i === 0 ? 0 : transitionAfter[i - 1],
+    cropX: clip.cropX ?? 0.5,
     energyScore: clip.energyScore ?? 0,
   }));
 
@@ -142,5 +151,7 @@ export const applyBoundaries = (
     music: restretchCues(extras.music ?? [], cutPoints),
     ducking: extras.ducking ?? DEFAULT_DUCKING,
     narrationPauses: extras.narrationPauses ?? [],
+    captions: extras.captions ?? [],
+    burnCaptions: extras.burnCaptions ?? false,
   };
 };

@@ -12,3 +12,5 @@ nvidia-cublas-cu12
 nvidia-cudnn-cu12
 pyttsx3
 playwright
+google-auth-oauthlib
+google-api-python-client

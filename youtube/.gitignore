@@ -1,0 +1,6 @@
+# Segredo do cliente OAuth e token de acesso. NUNCA versionar.
+# O client_secret.json o Samuel baixa do Google Cloud e salva aqui.
+# O token.dpapi e gerado pelo comando `autorizar`, cifrado por DPAPI
+# (so descriptografa com a conta Windows dele, nesta maquina).
+client_secret.json
+token.dpapi

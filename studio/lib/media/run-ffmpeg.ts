@@ -1,11 +1,23 @@
 import { spawn } from "node:child_process";
+import path from "node:path";
 
 export const DEV_NULL = process.platform === "win32" ? "NUL" : "/dev/null";
 
-// `npx`/`npx.cmd` spawned by their exact platform name, which Windows can
-// invoke directly (despite being a .cmd file) without going through a shell.
-// Exported for postprocess.ts's own npx fallback, which needs the same fix.
-export const NPX_COMMAND = process.platform === "win32" ? "npx.cmd" : "npx";
+// The Remotion CLI run by node itself, not through `npx`. Windows can NOT
+// spawn `npx.cmd` without a shell: since Node 18.20.2/20.12.2 (CVE-2024-27980)
+// that throws EINVAL on the spot — measured on this machine's Node 22.16.
+// Pointing node at the CLI's own entry file needs no shell and no .cmd, so
+// paths with spaces survive as single argv entries. Exported for
+// postprocess.ts's fallback, which needs the same fix.
+const REMOTION_CLI = path.join(
+  process.cwd(),
+  "node_modules",
+  "@remotion",
+  "cli",
+  "remotion-cli.js",
+);
+export const spawnRemotion = (args: string[]) =>
+  spawn(process.execPath, [REMOTION_CLI, ...args], { cwd: process.cwd() });
 
 // Runs `npx remotion ffmpeg`, which uses Remotion's bundled ffmpeg binary —
 // nothing needs to be installed on the machine.
@@ -26,9 +38,7 @@ export const NPX_COMMAND = process.platform === "win32" ? "npx.cmd" : "npx";
 // exactly what caused the space-in-path failures above to go unnoticed).
 export const runRemotionFfmpeg = (args: string[]): Promise<string> => {
   return new Promise((resolve, reject) => {
-    const child = spawn(NPX_COMMAND, ["remotion", "ffmpeg", ...args], {
-      cwd: process.cwd(),
-    });
+    const child = spawnRemotion(["ffmpeg", ...args]);
     let stderr = "";
     child.stderr.on("data", (chunk) => {
       stderr += chunk.toString();

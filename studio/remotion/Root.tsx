@@ -41,12 +41,15 @@ const DEFAULT_PLAN: EditPlan = {
       audioMode: "mix",
       filter: "none",
       transitionFromPrevious: "dissolve",
+      cropX: 0.5,
       energyScore: 0,
     },
   ],
   music: [],
   ducking: DEFAULT_DUCKING,
   narrationPauses: [],
+  captions: [],
+  burnCaptions: false,
 };
 
 export const RemotionRoot: React.FC = () => {

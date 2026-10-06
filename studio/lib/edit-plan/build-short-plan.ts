@@ -1,16 +1,8 @@
 import type { EditPlan } from "./schema";
 import { applyBoundaries } from "./apply-boundaries";
+import { SHORT_RESOLUTION } from "./output-resolution";
 
 export const DEFAULT_SHORT_TARGET_SECONDS = 30;
-
-// Vertical is the platform standard for a "Short" (YouTube Shorts, TikTok,
-// Reels) regardless of the source footage's own aspect. Clip.tsx already
-// renders with objectFit="cover", so pointing the composition at this frame
-// is enough: the usually-16:9 footage gets center-cropped to fill it, no
-// distortion, no letterboxing — the same "decouple output from source"
-// approach output-resolution.ts already uses for the full render.
-const SHORT_WIDTH = 1080;
-const SHORT_HEIGHT = 1920;
 
 // How far a candidate window's duration may drift from the target and still
 // be considered — as a fraction of the target. Wide enough that, on a
@@ -137,6 +129,24 @@ export const buildShortPlan = (
       end: Math.min(windowDurationSeconds, pause.end),
     }));
 
+  // Same windowing as the pauses: a caption is a measured moment in the
+  // narration, and the Short plays the narration trimmed to this window, so
+  // each caption shifts into window-relative time. One that straddles either
+  // edge is kept and clipped — cutting a subtitle's head or tail is better
+  // than dropping a line that is half-spoken on screen.
+  const captions = (fullPlan.captions ?? [])
+    .map((caption) => ({
+      ...caption,
+      t0: caption.t0 - windowStartSeconds,
+      t1: caption.t1 - windowStartSeconds,
+    }))
+    .filter((caption) => caption.t1 > 0 && caption.t0 < windowDurationSeconds)
+    .map((caption) => ({
+      ...caption,
+      t0: Math.max(0, caption.t0),
+      t1: Math.min(windowDurationSeconds, caption.t1),
+    }));
+
   return applyBoundaries(
     includedClips.map((clip) => ({
       id: clip.id,
@@ -144,6 +154,11 @@ export const buildShortPlan = (
       durationInSeconds: clip.naturalDurationInSeconds,
       audioMode: clip.audioMode,
       filter: clip.filter,
+      // Centred crop today. This is the single number a reframing analyser
+      // would fill in per scene to follow the subject instead — see
+      // ESTUDO-STUDIO-melhorias §C3 for why that analyser must write a crop
+      // track rather than re-encode the video.
+      cropX: clip.cropX,
       energyScore: clip.energyScore,
     })),
     {
@@ -154,12 +169,22 @@ export const buildShortPlan = (
     internalBoundarySeconds,
     fullPlan.fps,
     fullPlan.transitionFrames,
-    SHORT_WIDTH,
-    SHORT_HEIGHT,
+    // NOT fullPlan.width/height. The Short is a different FRAME, not just a
+    // shorter one: 1080x1920, with the 16:9 footage cropped into it by
+    // Clip.tsx's object-fit:cover + cropX. Inheriting the full plan's
+    // dimensions is what made every Short so far a 16:9 video in a vertical
+    // feed.
+    SHORT_RESOLUTION.width,
+    SHORT_RESOLUTION.height,
     {
       music,
       ducking: fullPlan.ducking,
       narrationPauses,
+      captions,
+      // The Short is the one cut that burns them in: it autoplays muted in
+      // the feed, so an un-captioned Short is a silent Short. This is what
+      // align/README.md meant by "para o Studio/Remotion queimar no Short".
+      burnCaptions: captions.length > 0,
     },
   );
 };

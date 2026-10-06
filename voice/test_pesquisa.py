@@ -133,7 +133,10 @@ class TestGuardasDoPipeline(unittest.TestCase):
 
         with patch.dict(os.environ, {"AI_PROJECT_ROOT": "/tmp/raiz-de-teste"}):
             recarregado = importlib.reload(self.pipeline)
-            self.assertEqual(str(recarregado.AI_PROJECT_ROOT), "/tmp/raiz-de-teste")
+            # Compara Path com Path, não string com string: no Windows o
+            # `str()` de um Path devolve `\tmp\raiz-de-teste` e o teste
+            # falhava por causa da barra, não por causa do comportamento.
+            self.assertEqual(recarregado.AI_PROJECT_ROOT, Path("/tmp/raiz-de-teste"))
         importlib.reload(self.pipeline)
 
 
