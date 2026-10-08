@@ -31,7 +31,7 @@ Vídeo → GIF (12 fps, largura 640, com paleta para qualidade):
 ffmpeg -i entrada.mp4 -vf "fps=12,scale=640:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse" saida.gif
 ```
 
-Cortar trecho (para Shorts — Documento 6):
+Cortar trecho (para Shorts):
 ```bash
 ffmpeg -ss 00:00:42 -to 00:01:12 -i entrada.mp4 -c copy corte_01.mp4
 ```

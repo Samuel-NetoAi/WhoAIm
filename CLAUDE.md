@@ -18,9 +18,9 @@ documento longo e a nota já respondia, você gastou contexto à toa.
 
 | A tarefa toca... | Nota curta (leia esta) | Documento longo (só se faltar) |
 |---|---|---|
-| gasto de crédito, resolução, modelo de vídeo | `_registros\HIGGSFIELD.md` | `REGRAS-PRODUCAO-VIDEO.md`, `planejamento-fluxo-higgsfield.md` |
+| gasto de crédito, resolução, modelo de vídeo | `_registros\HIGGSFIELD.md` | skill `whoiam`: `references/plataforma-e-custo.md` |
 | Blender, blockout, previz, cena 3D | `_registros\BLENDER.md` | `ESTUDO-BLENDER-2026-09-06.md` |
-| escrever prompt de Seedance | `_registros\HIGGSFIELD.md` | `GUIA-PROMPT-SEEDANCE-2-5.md` |
+| escrever prompt de cena, componente ou referência | `_registros\PRODUCAO-BLOCO.md` | skill `whoiam`: `references/etapa-2-componentes.md`, `etapa-3-referencias.md`, `etapa-4-cena.md` — **formato único** |
 | Higgsfield Academy, padrões da coleção | `_registros\HIGGSFIELD.md` | `ESTUDO-ACADEMY-HIGGSFIELD-completo.md` |
 | publicar vídeo, upload, API do YouTube | `_registros\YOUTUBE.md` | a skill `postagem` |
 | dirigir cena, ler roteiro, padrão de plano | `_registros\DIRECAO.md` | as referências da skill `whoiam` |
@@ -30,8 +30,10 @@ documento longo e a nota já respondia, você gastou contexto à toa.
 
 `C:\Ai-Project\Criaturas\` guarda 14 criaturas (Cthulhu, Medusa, Baba Yaga, Djin, Sobek,
 Umibozu, Dullahan, Dríade, Orphanim, Besta, IT, Dragões Ocidentais…). Cada uma tem
-`<Nome>\<nome>-video\notes\` com **`dossie.md`** (a lore apurada), `biblia-personagens.md`,
-`roteiro.md`, `storyboards.md`, `prompts.md` e `fases.json` (em que fase está).
+`<Nome>\<nome>-video\notes\` com **`dossie.md`** (a lore apurada) e `roteiro.md`. Desde
+2026-10-06 a produção usa `<Nome>\componentes\` e `<Nome>\blocos\bloco-NN\` (ver o SKILL.md da
+`whoiam`). Os `storyboards.md`, `prompts.md` e `biblia-personagens.md` antigos são histórico:
+nunca copiar prompt de lá.
 
 **Procurar lore só em `D:\Agentes` e no Omega dá falso negativo** — foi exatamente o erro
 cometido em 2026-09-08, quando afirmei que o Cthulhu nunca tinha sido pesquisado.
@@ -52,6 +54,9 @@ a leitura da direita não é opcional:
 - **abrir o Blender** → `BLENDER.md` §0 — há **dois portões de aprovação do Samuel**, e o primeiro
   é avisar antes de abrir
 - **propor qualquer gasto de crédito** → `HIGGSFIELD.md`
+- **escrever qualquer prompt de imagem ou de cena** → a etapa correspondente da skill `whoiam` +
+  `estilo-e-contencao.md`. O formato e as âncoras existem **só** lá; prompt de bloco antigo não é
+  modelo
 - **escrever script `bpy`** → `ESTUDO-BLENDER-2026-09-06.md` §4 — quatro mudanças de API da 5.x que
   quebram script de 4.x
 - **pesquisar qualquer coisa na web** → chamar `salomao_lembrar` PRIMEIRO. Já aconteceu de

@@ -37,8 +37,8 @@ hiding.** Quick cuts are what this model does when it can't animate the motion u
 🎓 *"When this model can't hold the movement, it cuts away and hopes you won't notice."*
 
 > **Corte rápido que você NÃO pediu = rejeição automática.** Não é estilo, é o modelo escondendo
-> movimento que não conseguiu animar. E é o sinal de que o bloco era AÇÃO tratado como SIMPLES —
-> ver `direcao-bloco-acao.md` §1.
+> movimento que não conseguiu animar. E é o sinal de que o bloco era de ação e foi escrito como
+> bloco simples — ver `direcao-bloco-acao.md` §1.
 
 ---
 
@@ -114,3 +114,24 @@ A régua 4/4 (`direcao-bloco-acao.md` §4.1) e esta rubrica trabalham juntas:
 3. **Todos os 4 reprovados na mesma coisa → o prompt está quebrado.** Consertar só aquilo.
 4. **1 ou 2 reprovados → foi sorte.** Pegar o melhor e seguir.
 5. Entre os aprovados, **escolher e seguir** — não regerar atrás de excelente (§1).
+
+---
+
+## 7. QUANDO O TAKE REPROVA — a ordem de correção, do mais barato ao mais caro
+
+Antes de tudo, a régua acima: **4 de 4 errados na mesma coisa é o prompt; 1 ou 2 é sorte.**
+Reescrever um prompt que estava certo é o caminho que mais custou nos projetos estudados.
+
+1. **Resolver na pós, custo zero:** desfoque de fundo, recorte, zoom lento de 100% para 120%, cortar
+   a câmera lenta que o modelo inventou, uma pitada de ruído (o ajuste que mais tira a cara de
+   plástico), barras de cinema. Take com **música** por baixo: descartar só a faixa de áudio daquele
+   bloco e montar o som na pós. Nunca regerar vídeo por causa do áudio.
+2. **Isolar o trecho ruim:** take bom com um beat ruim não se regera inteiro. Gera-se **só aquele
+   beat** num clipe curto (a partir de 4 s, custo proporcional), com o melhor quadro do take como
+   referência, e ele entra por cima na montagem. O `cena.md` já traz o plano B escrito.
+3. **Reusar o take como matéria-prima:** recortar o quadro bom da tentativa falha e usá-lo como
+   referência (ou `start_image`) da próxima. Geração ruim não é crédito perdido.
+4. **Simplificar o plano, não o texto:** partir o beat em dois mais simples; trocar multi-corte por
+   um plano contínuo; tirar uma referência (âncora demais briga entre si).
+5. **Só então reescrever o prompt**, e só a parte que falhou. Registrar o que mudou em
+   `receituario.md`.

@@ -158,8 +158,8 @@ Banana. Consequência dupla:
    sheet mediano — regerar até acertar não custa nada. Isso vale especialmente para a referência de
    locação nos dois ângulos (§2.3), que antes parecia luxo e agora é gratuita.
 
-> **A skill precisa ENTREGAR o prompt de imagem, não gerar a imagem.** O produto da Fase 1 é texto
-> pronto para colar na ferramenta dele.
+> **A skill precisa ENTREGAR o prompt de imagem, não gerar a imagem.** O produto das etapas 2 e 3 é texto
+> pronto para a extensão colar no GPT (`extensao-navegador.md`).
 
 **O que custa é o número de takes de VÍDEO.**
 
@@ -229,12 +229,10 @@ resultado é melhor: multidão nítida é onde o modelo quebra rosto e conta gen
 
 ### 4.4. Onde ainda dá para economizar sem perder a régua
 
-### 4.3. Onde ainda dá para economizar sem perder a régua
-
 - **Primeiro bloco de cada cena nova também merece 4/4**, mesmo sendo simples — é onde o prompt
   ainda não está provado. Depois que o prompt da cena acertou, os blocos seguintes herdam.
 - 🎓 **Recortar o melhor quadro de uma tentativa e reusar como referência** continua sendo a
-  primeira linha de correção (§5 do `REGRAS-PRODUCAO-VIDEO.md`) — o 4/4 dá 4 quadros bons para
+  primeira linha de correção (`rubrica-aceitacao-take.md` §7) — o 4/4 dá 4 quadros bons para
   escolher, não só 4 vídeos.
 
 ---

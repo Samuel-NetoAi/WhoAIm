@@ -3,15 +3,13 @@
 > Reescrito em 15/08/2026 pra parar de ser específico de uma criatura. Antes desta versão, a
 > tradução estava amarrada a números de bloco do Cthulhu — inútil pra qualquer produção nova. A
 > partir daqui, toda linha desta tabela deriva das tabelas GENÉRICAS que a `whoiam` já usa
-> (`direcao-cinematografica.md`, `vendor-visual-skills/`), nunca do conteúdo de um vídeo
+> (`direcao.md`, `vendor-visual-skills/`), nunca do conteúdo de um vídeo
 > específico. O Cthulhu vira só um EXEMPLO aplicado — ver `higgsfield-presets-exemplo-cthulhu.md`.
 >
-> **Papel deste arquivo dentro do pipeline (fundido em 28/08/2026):** este é o CATÁLOGO — nomes
-> reais de botão, confirmados por print, e as tabelas de derivação (ângulo→Movement,
-> lente-como-psicologia→Lens/Aperture, fraseado de movimento→preset). A DOUTRINA — quando usar
-> Higgsfield vs. MCP, custo em créditos, roteamento de modelo por bloco, Elements, a ficha de
-> controles e o parâmetro `genre` DIFERENTE do MCP — mora em `references/higgsfield-cinema-studio.md`
-> e `references/recursos-higgsfield-quando-usar.md`. Os três se citam; nenhum substitui o outro.
+> **Papel deste arquivo:** é o CATÁLOGO dos presets do Cinema Studio 4.0 — nomes reais de botão,
+> confirmados por print, e as tabelas de derivação (ângulo→Movement, lente-como-psicologia→
+> Lens/Aperture, fraseado de movimento→preset). Ele preenche a parte 1 (SETTINGS) do `cena.md`
+> (`etapa-4-cena.md`). Custo, parâmetros fixos e Elements: `plataforma-e-custo.md`.
 >
 > **Continua incompleto de propósito.** Minha única fonte de verdade sobre o Higgsfield são prints
 > que o Samuel manda — não existe ferramenta de API/MCP que exponha esses campos aqui, e tentativas
@@ -22,7 +20,7 @@
 > (Genre/Era/Tempo/paleta) trava por GERAÇÃO/BLOCO do Seedance, não pro vídeo inteiro — ver "Por
 > que duas camadas" abaixo.
 > **Lacuna nova, descoberta na fusão de 28/08/2026: a Emoção do personagem (roda de emoção da UI,
-> citada na ficha de controles de `higgsfield-cinema-studio.md`) nunca foi fotografada — não sei
+> linha "Emoção" do SETTINGS) nunca foi fotografada — não sei
 > quantas opções tem nem os nomes reais. Pendente de print.** Também continua em aberto o
 > workaround de Era pra período pré-1960s.
 
@@ -34,12 +32,12 @@ foi o erro da primeira versão deste arquivo:
 - **Camada 1 — nível da GERAÇÃO/CENA** (Genre, Era, Tempo, família de paleta de cor). Confirmado
   pelo Samuel (24/08/2026): o Film Setup do Higgsfield trava por geração do Seedance — uma cena de
   ~30s inteira sai no mesmo Genre/Era/Tempo, sem trocar NO MEIO dela, mas a cena seguinte já pode
-  vir com um Film Setup diferente. Ou seja, essa camada é decidida **uma vez por bloco do
-  Documento 3** (cada bloco = uma geração no Seedance), não uma vez só pro vídeo inteiro como a
+  vir com um Film Setup diferente. Ou seja, essa camada é decidida **uma vez por bloco**
+  (cada bloco = uma geração no Seedance), não uma vez só pro vídeo inteiro como a
   primeira versão deste arquivo supunha.
 - **Camada 2 — nível do PLANO/SHOT dentro da cena** (Camera, Lens, Aperture, Movement, Lighting).
-  Decidida a cada `[SHOT]` do Documento 3, a partir da intenção que o algoritmo de 8 passos de
-  `direcao-cinematografica.md` JÁ classificou pra aquele plano específico.
+  Decidida a cada beat do `cena.md`, a partir da intenção que o algoritmo de `direcao.md` JÁ
+  classificou pra aquele plano específico.
 
 Isso significa que a troca de clima no meio do vídeo (começa calmo, vira terror) se resolve em
 DOIS níveis que já existem: entre blocos, a Camada 1 inteira pode mudar (Genre Noir → Horror, por
@@ -68,9 +66,9 @@ Mapeamento pro canal (mito/horror/dread, quase nunca comédia):
 | **Comedy** | Descartado pra este canal | Nunca serve ao registro documental-sombrio |
 
 Confirmado: Genre trava por geração/bloco (não dá pra trocar no meio de uma cena de ~30s do
-Seedance), mas a próxima geração já pode vir com Genre diferente. Então, ao montar o Documento 3,
+Seedance), mas a próxima geração já pode vir com Genre diferente. Então, ao montar o `cena.md`,
 escolher o Genre bloco a bloco — junto de Era/Tempo/paleta — usando a MESMA intenção dominante que
-o passo 1 do algoritmo de `direcao-cinematografica.md` já classifica pra aquele bloco (ex.: bloco
+o passo 1 do algoritmo de `direcao.md` já classifica pra aquele bloco (ex.: bloco
 de investigação/lore → Noir; bloco de emergência da criatura → Horror ou Epic).
 
 ### Era — confirmado (24/08/2026) — LACUNA CRÍTICA: não cobre períodos antigos
@@ -82,7 +80,7 @@ Achado importante: **não existe nenhuma opção antes de 1960s.** Isso signific
 pra nenhuma criatura ambientada antes da década de 60 — inclusive o próprio Cthulhu (1925), que
 ficaria sem preset de época correspondente. Pra esses casos:
 - Usar **Auto** em Era (não force um "1960s" que é 35 anos adiante demais) e continuar resolvendo
-  o período pelo texto do prompt (`[STYLE]`, referências de vestuário/tecnologia/grão de filme já
+  o período pelo texto do prompt (seção `LOOK`, referências de vestuário/tecnologia/grão de filme já
   descritas manualmente) como a `whoiam` já faz hoje.
 - Reservar o preset de Era real pra criaturas com história ambientada em 1960 ou depois — aí sim
   escolher a década mais próxima do período real.
@@ -104,9 +102,9 @@ picotados).
 | **Chaotic** | Bloco de ação/clímax/pânico — cortes rápidos e picotados |
 | **Auto** | Deixar o sistema decidir quando o bloco não tem um ritmo dominante claro |
 
-Mapear pelo RITMO do bloco que a heurística de storyboard já classifica (contemplativo → Single
-shot/Calm; narrativo → Calm/Dynamic; ação/clímax → Chaotic) — mesma lógica da suspeita original,
-agora com nomes reais.
+Mapear pelo RITMO do bloco (contemplativo → Single shot/Calm; narrativo → Calm/Dynamic; ação/clímax →
+Dynamic). ⚠️ **Chaotic só se o Samuel pedir:** ele empurra para cortes rápidos e picotados, e a regra
+do canal é 3 a 4 cortes por bloco (oito cortes já geraram câmera lenta).
 
 ### Color palette — família de clima → paleta (genérico, não por criatura)
 
@@ -143,9 +141,9 @@ The Silk Curtain Falls, Playtime, Overtime, Everyone Speaks in Whispers.
 
 ---
 
-## CAMADA 2 — decidida por [SHOT], a partir da intenção já classificada
+## CAMADA 2 — decidida por beat, a partir da intenção já classificada
 
-### De `GRAMÁTICA — ângulo/movimento → efeito` (direcao-cinematografica.md) → Higgsfield
+### De `Gramática — ângulo e movimento pelo efeito` (direcao.md) → Higgsfield
 
 | Recurso (já escolhido pelo algoritmo, pelo EFEITO) | Movement / Camera-Lens-Aperture do Higgsfield |
 |---|---|
@@ -176,7 +174,7 @@ The Silk Curtain Falls, Playtime, Overtime, Everyone Speaks in Whispers.
 Casos especiais de Lens (fora da tabela de psicologia, usar com intenção clara):
 - **Halation Vintage / Warm Vintage** — registro de lenda/memória (bate com afirmação classificada
   "Mediana"/"Reza a lenda" pela `pesquisa-seres"); nunca em blocos de ação ou revelação direta da
-  criatura, porque o halo conflita com a âncora "RAW photo, ultra-realistic" que todo prompt carrega.
+  criatura, porque o halo conflita com a âncora de realismo (`estilo-e-contencao.md`).
 - **Anamorphic / Vintage Anamorphic** — quando o bloco pede peso de "cinema", não documental — bom
   candidato pro clímax/confronto do vídeo.
 - **8mm Film** (Camera, não Lens) — só se o canal um dia quiser um registro "encontrado"/amador
@@ -188,7 +186,7 @@ Casos especiais de Lens (fora da tabela de psicologia, usar com intenção clara
 
 ### De `FRASEADO DE MOVIMENTO` → Movement do Higgsfield
 
-| Fraseado já usado no `[SHOT]` | Botão de Movement |
+| Fraseado já usado no beat | Botão de Movement |
 |---|---|
 | `slow dolly forward` | Dolly in |
 | `slow push-in on [alvo]` | Slow zoom in |
@@ -228,11 +226,8 @@ jour, Soft cross.
 ## LACUNAS — o que ainda falta pra esta tabela ser confiável de ponta a ponta
 
 - ~~**Genre**~~ — confirmado 24/08/2026 (7 valores: General, Epic, Drama, Noir, Comedy, Horror,
-  Action). Falta só confirmar se pode trocar no meio do vídeo ou é fixo por projeto. **Não confundir
-  com o `genre` do MCP** (`cinematic_studio_video_v2`): enum diferente — ver `higgsfield-cinema-studio.md`
-  seção 4.
-- **Emoção do personagem (roda de emoção da UI)** — nova, descoberta na fusão de 28/08/2026 com
-  `higgsfield-cinema-studio.md`. Nunca fotografada; não sei quantas opções tem nem os nomes reais.
+  Action). Troca por bloco, não por vídeo.
+- **Emoção do personagem (roda de emoção da UI)** — nunca fotografada; não sei quantas opções tem nem os nomes reais.
   Pendente de print.
 - ~~**Era**~~ — confirmado 24/08/2026 (Auto, 1960s, 1980s, 1990s, 2000s, 2020s). **Lacuna nova
   descoberta**: não cobre nada antes de 1960s — sem uso real pra criaturas de período antigo

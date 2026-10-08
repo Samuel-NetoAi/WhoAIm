@@ -1,5 +1,10 @@
 # Narração — ElevenLabs v3 (audio tags)
 
+> **Nomes usados aqui (todos da etapa 6, pós-produção):** Documento 1/1a = legenda-base (o texto
+> da narração encaixado na montagem travada) · Documento 4 = narração marcada para o ElevenLabs v3 ·
+> Documento 6 = cortes para Shorts · Documento 7 = mapa de trilha · Documento 8 = mapa de edição.
+> Nenhum deles é gerado antes de os 20 takes estarem aprovados e montados no Studio.
+
 Referência do Documento 4. Substitui o formato Suno para NARRAÇÃO (decisão de jul/2026).
 O Suno continua APENAS para trilha musical (Documento 7) — não gerar narração no Suno.
 
@@ -108,8 +113,8 @@ disputam a mesma atenção, e sobrepor é o que faz o vídeo soar como podcast c
    somar a duração da narração do vídeo, descontar os blocos de diálogo.
 
 **Fronteira:** a fala **dentro da cena** é gerada pelo modelo de vídeo (Seedance), não aqui. Esta
-skill só cuida da voz de narração. Direção da fala, sotaque e som da cena estão em
-`atuacao-dialogo-som.md`.
+skill só cuida da voz de narração. Hoje o canal não tem fala dentro da cena: o vídeo sai só com
+o som do ambiente.
 
 ---
 
@@ -180,7 +185,7 @@ Devota... Serena... Humana.
 ─── fim da sequência 2 ───
 ```
 
-## Registro empírico (mesmo padrão do seedance-receituario)
+## Registro empírico (mesmo padrão do `receituario.md`)
 
 Quando o usuário relatar comportamento observado do v3 (tag que a voz X ignora, alucinação
 recorrente, take que só funciona com Creative...), registrar AQUI, com data. Isto é um

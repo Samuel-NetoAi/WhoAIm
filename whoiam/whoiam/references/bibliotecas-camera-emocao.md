@@ -20,11 +20,10 @@
 **Nenhuma das três bibliotecas usa negação. Nenhuma.** 45 movimentos de câmera, 25 emoções e um
 gerador de prompt inteiro, **escritos 100% no positivo.** Zero *"no dolly"*, zero *"not angry"*.
 
-Isso **não** contradiz a §7.4b do `REGRAS-PRODUCAO-VIDEO.md` — reforça a leitura dela por outro
-lado. A negativa exaustiva do prompt bank do Higgsfield **não é obrigatória**: dá para especificar
+Isso reforça a regra das travas de `etapa-4-cena.md` (negativa só entra acompanhada da afirmação). A negativa exaustiva do prompt bank do Higgsfield **não é obrigatória**: dá para especificar
 movimento de câmera com precisão total sem negar nada, desde que se declare os quatro campos da §1.
 
-> **Consequência para o teste da §7.4c:** o braço "positivo" ganhou uma forma canônica para ser
+> **Consequência para o teste da negativa (`receituario.md`, hipóteses abertas):** o braço "positivo" ganhou uma forma canônica para ser
 > testado — os quatro campos abaixo — em vez de ser só "o prompt sem as negativas".
 
 ---
@@ -48,8 +47,8 @@ End:      [onde o movimento termina e assenta]
   parallax shifts"*, *"keep the subject centered while the background rotates around them"*.
   É a trava de legibilidade do movimento.
 - **`End`** — **onde o movimento assenta.** *"settle on a clear final composition"*, *"land on the
-  upper target"*. Mesmo princípio do **end state** do diálogo (`atuacao-dialogo-som.md` §2) e da
-  trava de pose no corte (`REGRAS` §4). **Declarar o fim é um padrão do sistema inteiro, não um
+  upper target"*. Mesmo princípio do `END` de cada beat e da pose de emenda entre blocos
+  (`etapa-4-cena.md`). **Declarar o fim é um padrão do sistema inteiro, não um
   detalhe de câmera.**
 
 **Exemplos verbatim, para copiar a forma:**
@@ -98,7 +97,7 @@ side tracking shot · low tracking shot · vehicle tracking shot · chase shot
 > the upper lip peels back from the teeth, the nostrils flare, the neck tendons tighten, and the
 > head pushes forward."*
 
-Isto é a regra dos números (`direcao-cinematografica.md`) aplicada ao rosto: **descrever o
+Isto é a regra dos números (`direcao.md`) aplicada ao rosto: **descrever o
 observável, nunca o rótulo.** "Ele está com raiva" é adjetivo; a sequência acima é direção.
 
 E repare no padrão de cada verbete: **uma cadeia de micro-ações ordenadas, terminando num estado
@@ -177,7 +176,7 @@ metros e converter. E dá a régua para as medidas do blueprint de ação
 | wide shot | *full body in a richly detailed environment, deep focus* |
 | extreme wide shot | *a small figure within a vast, highly detailed environment, epic sense of scale, deep focus* |
 
-> **É a peça que faltava para o nosso problema de painel pequeno.** O tamanho do plano não é só
+> **É a peça que faltava para o nosso problema de quadro pequeno.** O tamanho do plano não é só
 > enquadramento — é **onde o modelo deve gastar resolução**. Close pede poro e olho nítido; wide
 > pede foco profundo e ambiente. Escrever o tamanho sem a cláusula deixa essa decisão para o
 > gerador, e ele erra para o lado do rosto de catálogo.
@@ -186,7 +185,7 @@ metros e converter. E dá a régua para as medidas do blueprint de ação
 
 Frase por vista, no mesmo padrão: *"seen from the front, the face toward the camera"* ·
 *"seen from directly behind, the back of the head toward the camera"*. Casa com a orientação
-motivada do corpo (`model-sheet-storyboard.md`).
+motivada do corpo (`direcao.md`, "Relação entre corpos").
 
 ---
 
@@ -198,7 +197,7 @@ motivada do corpo (`model-sheet-storyboard.md`).
 > As §1–§3 são repertório genérico. **Esta seção é o canal.** É a tabela de consulta única:
 > achou o tipo de cena, tem o movimento, a altura, o tamanho e a emoção.
 
-**Como usar:** o algoritmo do `direcao-cinematografica.md` continua mandando — intenção dramática
+**Como usar:** o algoritmo do `direcao.md` continua mandando — intenção dramática
 primeiro, dono do olhar depois, e **justificativa dramática obrigatória por shot**. Esta tabela é o
 **ponto de partida** de cada linha, não o substituto do algoritmo. Sair dela é permitido e às vezes
 certo; sair dela **sem porquê escrito** é o default de sempre com roupa nova.
