@@ -11,7 +11,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"C:/Users/Samuel/.claude/skills/whoiam/scripts/validar_bloco.py\" --lembrete",
+            "command": "python \"$CLAUDE_PROJECT_DIR/whoiam/whoiam/scripts/validar_bloco.py\" --lembrete",
             "timeout": 15
           }
         ]
@@ -23,7 +23,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"C:/Users/Samuel/.claude/skills/whoiam/scripts/validar_bloco.py\" --validar",
+            "command": "python \"$CLAUDE_PROJECT_DIR/whoiam/whoiam/scripts/validar_bloco.py\" --validar",
             "timeout": 15,
             "statusMessage": "Portão de entrega (whoiam)"
           }

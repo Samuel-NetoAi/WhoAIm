@@ -46,21 +46,14 @@ chão, plano médio, sobre o ombro, de cima.
 Uma imagem por categoria e por momento. Cada imagem mostra **um sujeito e uma ação**, com composição
 simples: quadro denso faz o modelo duplicar personagem.
 
-**🟡 Método do manequim — ideia do Samuel, 2026-10-08, A TESTAR no Bloco 8 do Cthulhu.** Imagem de
-referência com o rosto dos personagens fez o Cinema Studio bloquear a geração com *"a entrada pode
-conter uma pessoa real ou figura pública"*. Nos blocos que passaram, os personagens só entravam como
-Element. Proposta: a referência mostra o **cenário real** e, no lugar de cada personagem, um
-**manequim sem rosto, de cor única e fosca**, na pose, posição, escala e ângulo de câmera desejados.
-- ⚫ **Uma cor fixa por personagem, para sempre** (Samuel, 2026-10-08): a cor fica gravada no
-  `registro.json` da criatura, no campo `cor_manequim` de cada personagem, e **todo bloco lê de lá**,
-  nunca escolhe de novo. Personagem novo recebe uma cor da lista `manequins.livres_para_novos_personagens`
-  do mesmo arquivo. As cores ficam **fora do figurino de todos**, para não vazar para a roupa.
-  Cthulhu: capitão = vermelho · Johansen = amarelo · William = verde-limão · tripulante velho =
-  laranja · tripulante jovem = roxo · encapuzado do culto = cinza.
-- No prompt de cena: *"The <cor> mannequin in @Image N marks only the position, pose and scale of
-  @<element>; never render a mannequin, the character comes from the Element. Mannequin colours are
-  identification tags only."*
-- Status: proposto. Virar regra só depois do primeiro bloco que passar com manequins.
+**🔴 Nunca usar manequim, boneco ou figura sem rosto como marcador de personagem em referência**
+(Samuel, 2026-10-09). Foi testado no Bloco 8 do Cthulhu e o vídeo copiou os bonecos: um vermelho no lugar
+do rosto do Collins e um verde "vivo" no fundo. O modelo trata tudo o que está na imagem como conteúdo da
+cena. Personagem em referência aparece com o rosto e o figurino da folha dele (`per_*.png`, anexada),
+como nos blocos anteriores. O bloqueio de "pessoa real" visto antes tinha como causa provável a folha
+antiga, já trocada; se voltar, avisar o Samuel antes de tentar outra solução. Vale também para cores
+de marcação e qualquer outro tag visual dentro da imagem.
+
 
 **Referência é momento de passagem, não quadro parado** (Samuel, 2026-10-07): ela fixa como a cena
 está num instante; o vídeo passa por ela em movimento, com ação antes e depois

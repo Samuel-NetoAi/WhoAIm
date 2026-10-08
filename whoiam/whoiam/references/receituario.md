@@ -69,4 +69,6 @@
 |---|---|---|---|
 | 2026-10-06 | Cthulhu / bloco 8 (referências) | Pedidas na mesma conversa do GPT das referências antigas, as imagens novas saíram no estilo ultra-realista anterior, ignorando a âncora naturalista | Conversa nova por lote e por estilo (`extensao-navegador.md` §3) |
 | 2026-10-06 | Cthulhu / bloco 8 (referências) | Duas referências do mesmo momento (capitão caído; Johansen ajoelhado) saíram quase idênticas — mesmo enquadramento, só um personagem a mais | Cada referência de um bloco precisa de ponto de vista diferente; referência que repete composição de outra não entra |
+| 2026-10-09 | Cthulhu / bloco 8 (vídeo) | Referências com manequins coloridos no lugar dos personagens: o vídeo copiou o boneco vermelho como rosto do Collins e um boneco verde "vivo" ao fundo; o chokeslam não aconteceu | Nunca usar manequim nem marcador visual na imagem; personagem entra com o rosto da folha (`etapa-3-referencias.md`). Golpe: descrever em fases com horário e mostrar os dois corpos |
+| 2026-10-09 | Cthulhu / bloco 8 (vídeo) | Volta de câmera de 100° em plano de 12 s: o fundo mudou de uma vez no meio do plano; Collins ferido se arrastou rápido e longe | Câmera que muda de lado mostra um fundo que nenhuma referência define: plano com fundo travado fica fixo. Ferimento: dar a distância em centímetros e o número de puxadas |
 | | | | |
