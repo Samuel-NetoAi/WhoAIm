@@ -112,6 +112,30 @@ só se nomeia o sentimento.
   de frente. Nunca inverter a perspectiva sem o Samuel dizer — foi o erro do Bloco 8, em que a câmera
   ficou atrás do capitão.
 
+## Prioridade frontal e direção do olhar
+
+**Regra do Samuel — 2026-10-09.** Quando personagens aparecem em referências ou vídeos, priorizar
+vistas **de frente ou em três quartos**, com rosto, olhos e reação legíveis. Evitar usar personagens
+de costas como composição padrão, inclusive quando observam algo distante.
+
+- **Frente para a câmera não significa olhar para a lente.** Declarar o alvo da atenção de cada
+  personagem e a orientação dos olhos, da cabeça e do corpo em relação a esse alvo. Um desvio de
+  olhar só entra quando faz parte da ação e tem causa descrita.
+- **Posicionar a câmera para preservar rosto e alvo.** Usar um ângulo frontal oblíquo ou lateral
+  em três quartos; quando ambos não couberem com geometria coerente, usar plano de reação e
+  contraplano do alvo, mantendo o eixo e a direção do olhar entre cortes. Não torcer a postura
+  nem deslocar o alvo só para mostrar o rosto.
+- **Costas são exceção permitida, com motivo narrativo declarado:** ponto de vista sobre o ombro,
+  ocultação intencional da identidade, afastamento ou ação cuja leitura exija esse ângulo.
+  A exceção deve constar na justificativa da referência ou do beat. O sobre o ombro continua
+  obedecendo à definição acima; não inverter quem ocupa o primeiro plano.
+- **Conferir a atenção de todos no grupo.** Se Johansen e William observam uma coluna de fumaça,
+  descrever ambos olhando para aquela coluna, com linhas de olhar coerentes com sua posição.
+  Mostrar o rosto sem essa relação espacial não resolve a cena.
+
+Aplicar a novas referências e prompts. A cena 13a que motivou a regra será tratada na
+pós-produção por decisão do Samuel; esta atualização não exige refazê-la.
+
 ## Relação entre corpos
 
 - **Geometria declarada** quando há 2+ sujeitos: posição no quadro, direção do olhar e do corpo,

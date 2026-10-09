@@ -86,7 +86,13 @@ juntar etapas, siga o pedido: as etapas são o padrão, não uma prisão.
    imagem nativa do GPT; NÃO usar o MCP do Higgsfield"*. Prompt de cena: *"PROMPT DE CENA (VÍDEO) —
    Higgsfield Cinema Studio 4.0, modo Video; não vai para o GPT"*. E todo arquivo diz **de que pasta
    sobem as imagens e onde salvar o que for gerado**, em caminho completo.
-9. **Geometria difícil** (escala, várias pessoas, perseguição) pode pedir um blockout no Blender.
+9. **Personagens de frente como prioridade** (Samuel, 2026-10-09). Em referências e vídeos,
+   priorizar enquadramentos frontais ou em três quartos, com rosto e reação legíveis. Plano de
+   costas é exceção com motivo narrativo declarado, não a composição padrão. Mostrar o rosto
+   não significa olhar para a câmera: olhos, cabeça e corpo devem orientar a atenção para o alvo
+   da cena. Aplicação e exceções em `references/direcao.md`, seção “Prioridade frontal e direção
+   do olhar”.
+10. **Geometria difícil** (escala, várias pessoas, perseguição) pode pedir um blockout no Blender.
    Abrir o Blender tem **dois portões de aprovação**: ver `D:\Agentes\_registros\BLENDER.md` §0.
 
 ---

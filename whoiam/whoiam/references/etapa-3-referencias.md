@@ -34,6 +34,12 @@ puxar referências diferentes em cortes diferentes. Teto da plataforma: **30 ima
 para fixar o que o personagem sente, o rosto ocupa a maior parte do quadro. **Over the shoulder do X**
 é sempre a câmera atrás do ombro de X, vendo o que X vê.
 
+**Prioridade frontal e olhar coerente** (Samuel, 2026-10-09): personagens de frente ou em três
+quartos, com rosto legível e atenção dirigida ao alvo da cena, são o padrão. Declarar para cada
+personagem o alvo e a orientação de olhos, cabeça e corpo. Vista de costas exige motivo narrativo
+na descrição do que a referência RESOLVE. Conferir isso no prompt e na imagem gerada antes de
+entregar o conjunto; aplicação e exceções em `direcao.md`, “Prioridade frontal e direção do olhar”.
+
 **Todo personagem importante do momento aparece na imagem.** Antes de entregar, conferir a lista de
 quem o roteiro põe naquele momento contra quem o prompt descreve — no Bloco 8, o último quadro saiu
 sem o William.

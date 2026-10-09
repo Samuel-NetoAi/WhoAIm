@@ -295,7 +295,10 @@ THE CAP = the same peaked wool cap in every shot.
 
 Responder nas OBSERVAÇÕES, uma linha cada; corrigir antes de entregar o que falhar:
 1. Qual a intenção, e cada beat serve a ela?
-2. Quem é o dono do olhar, e os ângulos obedecem?
+2. Quem é o dono do olhar, e os ângulos obedecem? Os personagens aparecem prioritariamente de
+   frente ou em três quartos, com rosto legível e olhos, cabeça e corpo orientados ao alvo da
+   cena? Cada vista de costas tem motivo narrativo declarado, conforme `direcao.md`, “Prioridade
+   frontal e direção do olhar”?
 3. Toda ação tem antecipação, consequência e conectores de causa (`only after`, `as`, `until`)?
 4. Todo beat tem posição na tela, foco com gatilho, profundidade e `END`?
 5. O risco principal tem um bloco CRITICAL com descrição positiva antes das proibições?
